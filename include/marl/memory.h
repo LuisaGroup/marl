@@ -109,16 +109,16 @@ class Allocator {
   template <typename T>
   using unique_ptr = std::unique_ptr<T, Deleter>;
 
-  virtual ~Allocator() = default;
+  MARL_EXPORT ~Allocator();
 
   // allocate() allocates memory from the allocator.
   // The returned Allocation::request field must be equal to the Request
   // parameter.
-  virtual Allocation allocate(const Allocation::Request&) = 0;
+  MARL_EXPORT Allocation allocate(const Allocation::Request&);
 
   // free() frees the memory returned by allocate().
   // The Allocation must have all fields equal to those returned by allocate().
-  virtual void free(const Allocation&) = 0;
+  MARL_EXPORT void free(const Allocation&);
 
   // create() allocates and constructs an object of type T, respecting the
   // alignment of the type.
@@ -146,7 +146,6 @@ class Allocator {
   template <typename T, typename... ARGS>
   inline std::shared_ptr<T> make_shared(ARGS&&... args);
 
- protected:
   Allocator() = default;
 };
 
@@ -227,98 +226,6 @@ std::shared_ptr<T> Allocator::make_shared(ARGS&&... args) {
   auto alloc = allocate(request);
   new (alloc.ptr) T(std::forward<ARGS>(args)...);
   return std::shared_ptr<T>(reinterpret_cast<T*>(alloc.ptr), Deleter{this, 1});
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// TrackedAllocator
-///////////////////////////////////////////////////////////////////////////////
-
-// TrackedAllocator wraps an Allocator to track the allocations made.
-class TrackedAllocator : public Allocator {
- public:
-  struct UsageStats {
-    // Total number of allocations.
-    size_t count = 0;
-    // total allocation size in bytes (as requested, may be higher due to
-    // alignment or guards).
-    size_t bytes = 0;
-  };
-
-  struct Stats {
-    // numAllocations() returns the total number of allocations across all
-    // usages for the allocator.
-    inline size_t numAllocations() const;
-
-    // bytesAllocated() returns the total number of bytes allocated across all
-    // usages for the allocator.
-    inline size_t bytesAllocated() const;
-
-    // Statistics per usage.
-    std::array<UsageStats, size_t(Allocation::Usage::Count)> byUsage;
-  };
-
-  // Constructor that wraps an existing allocator.
-  inline TrackedAllocator(Allocator* allocator);
-
-  // stats() returns the current allocator statistics.
-  inline Stats stats();
-
-  // Allocator compliance
-  inline Allocation allocate(const Allocation::Request&) override;
-  inline void free(const Allocation&) override;
-
- private:
-  Allocator* const allocator;
-  std::mutex mutex;
-  Stats stats_;
-};
-
-size_t TrackedAllocator::Stats::numAllocations() const {
-  size_t out = 0;
-  for (auto& stats : byUsage) {
-    out += stats.count;
-  }
-  return out;
-}
-
-size_t TrackedAllocator::Stats::bytesAllocated() const {
-  size_t out = 0;
-  for (auto& stats : byUsage) {
-    out += stats.bytes;
-  }
-  return out;
-}
-
-TrackedAllocator::TrackedAllocator(Allocator* allocator_)
-    : allocator(allocator_) {}
-
-TrackedAllocator::Stats TrackedAllocator::stats() {
-  std::unique_lock<std::mutex> lock(mutex);
-  return stats_;
-}
-
-Allocation TrackedAllocator::allocate(const Allocation::Request& request) {
-  {
-    std::unique_lock<std::mutex> lock(mutex);
-    auto& usageStats = stats_.byUsage[int(request.usage)];
-    ++usageStats.count;
-    usageStats.bytes += request.size;
-  }
-  return allocator->allocate(request);
-}
-
-void TrackedAllocator::free(const Allocation& allocation) {
-  {
-    std::unique_lock<std::mutex> lock(mutex);
-    auto& usageStats = stats_.byUsage[int(allocation.request.usage)];
-    MARL_ASSERT(usageStats.count > 0,
-                "TrackedAllocator detected abnormal free()");
-    MARL_ASSERT(usageStats.bytes >= allocation.request.size,
-                "TrackedAllocator detected abnormal free()");
-    --usageStats.count;
-    usageStats.bytes -= allocation.request.size;
-  }
-  return allocator->free(allocation);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
