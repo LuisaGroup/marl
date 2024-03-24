@@ -8,11 +8,14 @@ add_includedirs("include", {
 if is_plat("windows") then
     add_defines("NOMINMAX")
 end
-add_files("src/*.c", "src/*.S")
+add_files("src/*.c")
 add_defines("MARL_BUILDING_DLL")
 add_defines("MARL_DLL", {public = true})
 add_deps("eastl")
 on_load(function(target)
+    if not is_plat("windows") then
+        target:add_files(path.join(os.scriptdir(), "src/*.S"))
+    end
     local src_path = path.join(os.scriptdir(), "src")
     for _, filepath in ipairs(os.files(path.join(src_path, "*.cpp"))) do
         local file_name = path.filename(filepath)
