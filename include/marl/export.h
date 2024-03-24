@@ -15,7 +15,7 @@
 #ifndef marl_export_h
 #define marl_export_h
 
-#if defined(MARL_DLL) || defined(_MSC_VER)
+#if defined(MARL_DLL) && defined(_MSC_VER)
 
 #if MARL_BUILDING_DLL
 #define MARL_EXPORT __declspec(dllexport)
