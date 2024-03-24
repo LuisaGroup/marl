@@ -1,8 +1,13 @@
 target("marl")
 _config_project({
-	project_kind = "static"
+    project_kind = "static"
 })
-add_includedirs("include", {public = true})
+add_includedirs("include", {
+    public = true
+})
+if is_plat("windows") then
+    add_defines("NOMINMAX")
+end
 add_files("src/*.c")
 on_load(function(target)
     local src_path = path.join(os.scriptdir(), "src")
