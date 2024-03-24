@@ -153,10 +153,10 @@ class Trace {
   uint64_t timestamp();  // in microseconds
 
   void put(Event*);
-  std::unique_ptr<Event> take();
+  eastl::unique_ptr<Event> take();
 
   struct EventQueue {
-    std::queue<std::unique_ptr<Event> > data;  // guarded by mutes
+    std::queue<eastl::unique_ptr<Event> > data;  // guarded by mutes
     std::condition_variable condition;
     std::mutex mutex;
   };

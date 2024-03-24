@@ -25,6 +25,8 @@
 #include <memory>
 #include <mutex>
 #include <utility>  // std::forward
+#include <EASTL/unique_ptr.h>
+#include <EASTL/shared_ptr.h>
 
 namespace marl {
 
@@ -105,9 +107,9 @@ class Allocator {
     size_t count = 0;
   };
 
-  // unique_ptr<T> is an alias to std::unique_ptr<T, Deleter>.
+  // unique_ptr<T> is an alias to eastl::unique_ptr<T, Deleter>.
   template <typename T>
-  using unique_ptr = std::unique_ptr<T, Deleter>;
+  using unique_ptr = eastl::unique_ptr<T, Deleter>;
 
   MARL_EXPORT ~Allocator();
 
@@ -142,9 +144,9 @@ class Allocator {
   inline unique_ptr<T> make_unique_n(size_t n, ARGS&&... args);
 
   // make_shared() returns a new object allocated from the allocator
-  // wrapped in a std::shared_ptr that respects the alignment of the type.
+  // wrapped in a eastl::shared_ptr that respects the alignment of the type.
   template <typename T, typename... ARGS>
-  inline std::shared_ptr<T> make_shared(ARGS&&... args);
+  inline eastl::shared_ptr<T> make_shared(ARGS&&... args);
 
   Allocator() = default;
 };
@@ -217,7 +219,7 @@ Allocator::unique_ptr<T> Allocator::make_unique_n(size_t n, ARGS&&... args) {
 }
 
 template <typename T, typename... ARGS>
-std::shared_ptr<T> Allocator::make_shared(ARGS&&... args) {
+eastl::shared_ptr<T> Allocator::make_shared(ARGS&&... args) {
   Allocation::Request request;
   request.size = sizeof(T);
   request.alignment = alignof(T);
@@ -225,7 +227,7 @@ std::shared_ptr<T> Allocator::make_shared(ARGS&&... args) {
 
   auto alloc = allocate(request);
   new (alloc.ptr) T(std::forward<ARGS>(args)...);
-  return std::shared_ptr<T>(reinterpret_cast<T*>(alloc.ptr), Deleter{this, 1});
+  return eastl::shared_ptr<T>(reinterpret_cast<T*>(alloc.ptr), Deleter{this, 1});
 }
 
 ///////////////////////////////////////////////////////////////////////////////

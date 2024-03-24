@@ -26,9 +26,10 @@
 
 #include "export.h"
 
-#include <functional>
+#include <EASTL/functional.h>
 #include <memory>
 #include <utility>
+#include <EASTL/shared_ptr.h>
 
 namespace marl {
 
@@ -83,8 +84,8 @@ inline FinallyImpl<F> make_finally(F&& f) {
 }
 
 template <typename F>
-inline std::shared_ptr<Finally> make_shared_finally(F&& f) {
-  return std::make_shared<FinallyImpl<F>>(std::forward<F>(f));
+inline eastl::shared_ptr<Finally> make_shared_finally(F&& f) {
+  return eastl::make_shared<FinallyImpl<F>>(std::forward<F>(f));
 }
 
 }  // namespace marl

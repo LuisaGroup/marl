@@ -208,7 +208,7 @@ void Allocator::free(const marl::Allocation& allocation) {
     detail::pagedFree(allocation.ptr, allocation.request.alignment,
                       allocation.request.size, true, true);
   } else {
-    eastl::GetDefaultAllocator()->deallocate(allocation.ptr, 0);
+    eastl::GetDefaultAllocator()->deallocate(allocation.ptr, allocation.request.size);
   }
 }
 Allocator::~Allocator() = default;

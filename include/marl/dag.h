@@ -48,11 +48,11 @@ struct DAGRunContext<void> {
 };
 template <typename T>
 struct DAGWork {
-  using type = std::function<void(T)>;
+  using type = eastl::function<void(T)>;
 };
 template <>
 struct DAGWork<void> {
-  using type = std::function<void()>;
+  using type = eastl::function<void()>;
 };
 }  // namespace detail
 

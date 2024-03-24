@@ -258,7 +258,7 @@ Allocator::unique_ptr<Scheduler::Fiber> Scheduler::Fiber::create(
     Allocator* allocator,
     uint32_t id,
     size_t stackSize,
-    const std::function<void()>& func) {
+    const eastl::function<void()>& func) {
   return allocator->make_unique<Fiber>(
       OSFiber::createFiber(allocator, stackSize, func), id);
 }
@@ -708,7 +708,7 @@ void Scheduler::Worker::runUntilIdle() {
       // Run the task.
       task();
 
-      // std::function<> can carry arguments with complex destructors.
+      // eastl::function<> can carry arguments with complex destructors.
       // Ensure these are destructed outside of the lock.
       task = Task();
 

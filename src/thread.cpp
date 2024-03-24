@@ -187,7 +187,7 @@ Thread::Affinity Thread::Affinity::all(
   return affinity;
 }
 
-std::shared_ptr<Thread::Affinity::Policy> Thread::Affinity::Policy::anyOf(
+eastl::shared_ptr<Thread::Affinity::Policy> Thread::Affinity::Policy::anyOf(
     Affinity&& affinity,
     Allocator* allocator /* = Allocator::Default */) {
   struct Policy : public Thread::Affinity::Policy {
@@ -218,7 +218,7 @@ std::shared_ptr<Thread::Affinity::Policy> Thread::Affinity::Policy::anyOf(
   return allocator->make_shared<Policy>(std::move(affinity));
 }
 
-std::shared_ptr<Thread::Affinity::Policy> Thread::Affinity::Policy::oneOf(
+eastl::shared_ptr<Thread::Affinity::Policy> Thread::Affinity::Policy::oneOf(
     Affinity&& affinity,
     Allocator* allocator /* = Allocator::Default */) {
   struct Policy : public Thread::Affinity::Policy {

@@ -15,7 +15,7 @@
 #include "marl/debug.h"
 #include "marl/memory.h"
 
-#include <functional>
+#include <EASTL/functional.h>
 #include <memory>
 
 #define WIN32_LEAN_AND_MEAN 1
@@ -38,7 +38,7 @@ class OSFiber {
   static inline Allocator::unique_ptr<OSFiber> createFiber(
       Allocator* allocator,
       size_t stackSize,
-      const std::function<void()>& func);
+      const eastl::function<void()>& func);
 
   // switchTo() immediately switches execution to the given fiber.
   // switchTo() must be called on the currently executing fiber.
@@ -48,7 +48,7 @@ class OSFiber {
   static inline void WINAPI run(void* self);
   LPVOID fiber = nullptr;
   bool isFiberFromThread = false;
-  std::function<void()> target;
+  eastl::function<void()> target;
 };
 
 OSFiber::~OSFiber() {
@@ -75,7 +75,7 @@ Allocator::unique_ptr<OSFiber> OSFiber::createFiberFromCurrentThread(
 Allocator::unique_ptr<OSFiber> OSFiber::createFiber(
     Allocator* allocator,
     size_t stackSize,
-    const std::function<void()>& func) {
+    const eastl::function<void()>& func) {
   auto out = allocator->make_unique<OSFiber>();
   // stackSize is rounded up to the system's allocation granularity (typically
   // 64 KB).
@@ -92,7 +92,7 @@ void OSFiber::switchTo(OSFiber* to) {
 }
 
 void WINAPI OSFiber::run(void* self) {
-  std::function<void()> func;
+  eastl::function<void()> func;
   std::swap(func, reinterpret_cast<OSFiber*>(self)->target);
   func();
 }

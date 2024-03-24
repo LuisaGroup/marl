@@ -167,14 +167,14 @@ void Trace::put(Event* event) {
   auto& queue = eventQueues[idx];
   std::unique_lock<std::mutex> lock(queue.mutex);
   auto notify = queue.data.size() == 0;
-  queue.data.push(std::unique_ptr<Event>(event));
+  queue.data.push(eastl::unique_ptr<Event>(event));
   lock.unlock();
   if (notify) {
     queue.condition.notify_one();
   }
 }
 
-std::unique_ptr<Trace::Event> Trace::take() {
+eastl::unique_ptr<Trace::Event> Trace::take() {
   auto idx = eventQueueReadIdx++ % eventQueues.size();
   auto& queue = eventQueues[idx];
   std::unique_lock<std::mutex> lock(queue.mutex);

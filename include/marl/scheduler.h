@@ -30,7 +30,8 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <functional>
+#include <EASTL/functional.h>
+#include <EASTL/algorithm.h>
 #include <thread>
 
 namespace marl {
@@ -48,8 +49,8 @@ class Scheduler {
 
  public:
   using TimePoint = std::chrono::system_clock::time_point;
-  using Predicate = std::function<bool()>;
-  using ThreadInitializer = std::function<void(int workerId)>;
+  using Predicate = eastl::function<bool()>;
+  using ThreadInitializer = eastl::function<void(int workerId)>;
 
   // Config holds scheduler configuration settings that can be passed to the
   // Scheduler constructor.
@@ -66,7 +67,7 @@ class Scheduler {
       ThreadInitializer initializer;
 
       // Thread affinity policy to use for worker threads.
-      std::shared_ptr<Thread::Affinity::Policy> affinityPolicy;
+      eastl::shared_ptr<Thread::Affinity::Policy> affinityPolicy;
     };
 
     WorkerThread workerThread;
@@ -90,7 +91,7 @@ class Scheduler {
     MARL_NO_EXPORT inline Config& setWorkerThreadInitializer(
         const ThreadInitializer&);
     MARL_NO_EXPORT inline Config& setWorkerThreadAffinityPolicy(
-        const std::shared_ptr<Thread::Affinity::Policy>&);
+        const eastl::shared_ptr<Thread::Affinity::Policy>&);
   };
 
   // Constructor.
@@ -257,7 +258,7 @@ class Scheduler {
         Allocator* allocator,
         uint32_t id,
         size_t stackSize,
-        const std::function<void()>& func);
+        const eastl::function<void()>& func);
 
     // createFromCurrentThread() constructs and returns a new fiber with the
     // given identifier for the current thread.
@@ -543,7 +544,7 @@ Scheduler::Config& Scheduler::Config::setWorkerThreadInitializer(
 }
 
 Scheduler::Config& Scheduler::Config::setWorkerThreadAffinityPolicy(
-    const std::shared_ptr<Thread::Affinity::Policy>& policy) {
+    const eastl::shared_ptr<Thread::Affinity::Policy>& policy) {
   workerThread.affinityPolicy = policy;
   return *this;
 }
@@ -589,16 +590,6 @@ inline void schedule(Task&& t) {
   MARL_ASSERT_HAS_BOUND_SCHEDULER("marl::schedule");
   auto scheduler = Scheduler::get();
   scheduler->enqueue(std::move(t));
-}
-
-// schedule() schedules the function f to be asynchronously called with the
-// given arguments using the currently bound scheduler.
-template <typename Function, typename... Args>
-inline void schedule(Function&& f, Args&&... args) {
-  MARL_ASSERT_HAS_BOUND_SCHEDULER("marl::schedule");
-  auto scheduler = Scheduler::get();
-  scheduler->enqueue(
-      Task(std::bind(std::forward<Function>(f), std::forward<Args>(args)...)));
 }
 
 // schedule() schedules the function f to be asynchronously called using the
