@@ -8,7 +8,7 @@ add_includedirs("include", {
 if is_plat("windows") then
     add_defines("NOMINMAX")
 end
-add_files("src/*.c")
+add_files("src/*.c", "src/*.S")
 add_defines("MARL_BUILDING_DLL")
 add_defines("MARL_DLL", {public = true})
 add_deps("eastl")
