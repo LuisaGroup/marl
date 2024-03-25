@@ -273,7 +273,7 @@ endfunction(marl_set_target_options)
 # marl
 if(MARL_BUILD_SHARED OR BUILD_SHARED_LIBS)
     if (MARL_BUILD_OBJECT)
-        add_library(marl SHARED ${MARL_LIST})
+	    add_library(marl OBJECT ${MARL_LIST})
     else ()
         add_library(marl SHARED ${MARL_LIST})
     endif ()
