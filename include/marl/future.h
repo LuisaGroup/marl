@@ -67,7 +67,7 @@ class Future {
     marl::mutex mutex;
     ConditionVariable cv;
     void (*dtor)(void*) = nullptr;
-    std::byte placeholder[0];
+    [[no_unique_address]] std::byte placeholder[0];
     void* ptr() {
       constexpr auto aligned_size = (sizeof(Shared) + 15ull) & ~(15ull);
       constexpr auto offset = aligned_size - sizeof(Shared);
