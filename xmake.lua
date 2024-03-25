@@ -1,6 +1,6 @@
 target("marl")
 _config_project({
-    project_kind = "shared"
+    project_kind = "static"
 })
 add_includedirs("include", {
     public = true
@@ -9,8 +9,8 @@ if is_plat("windows") then
     add_defines("NOMINMAX")
 end
 add_files("src/*.c")
-add_defines("MARL_BUILDING_DLL")
-add_defines("MARL_DLL", {public = true})
+-- add_defines("MARL_BUILDING_DLL")
+-- add_defines("MARL_DLL", {public = true})
 add_deps("eastl")
 on_load(function(target)
     if not is_plat("windows") then
