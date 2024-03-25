@@ -16,6 +16,7 @@
 #define marl_future_h
 
 #include <EASTL/allocator.h>
+#include <EASTL/optional.h>
 #include <chrono>
 #include "conditionvariable.h"
 #include "containers.h"
@@ -25,106 +26,92 @@
 namespace marl {
 
 // Future is a synchronization primitive used to block until a signal is raised.
-
+template <typename T>
 class Future {
- public:
-  Future(size_t mem_size, Allocator* allocator = Allocator::Default);
-
-  void signal(eastl::move_only_function<void(void*)> const& new_ctor,
-              void (*new_dtor)(void*)) const;
+public:
+  MARL_NO_EXPORT inline Future(Allocator* allocator = Allocator::Default);
+  template <typename... Args>
+    requires(std::is_constructible_v<T, Args && ...>)
+  MARL_NO_EXPORT inline void signal(Args&&...) const;
 
   // clear() clears the signaled state.
-  void clear() const;
+  MARL_NO_EXPORT inline void clear() const;
 
   // wait() blocks until the event is signaled.
   // If the event was constructed with the Auto Mode, then only one
   // call to wait() will unblock before returning, upon which the signalled
   // state will be automatically cleared.
-  [[nodiscard]] void* wait() const;
+  [[nodiscard]] MARL_NO_EXPORT inline T& wait() const;
 
   // test() returns true if the event is signaled, otherwise false.
   // If the event is signalled and was constructed with the Auto Mode
   // then the signalled state will be automatically cleared upon returning.
-  [[nodiscard]] bool test() const;
+  [[nodiscard]] MARL_NO_EXPORT inline bool test() const;
 
   // isSignalled() returns true if the event is signaled, otherwise false.
   // Unlike test() the signal is not automatically cleared when the event was
   // constructed with the Auto Mode.
   // Note: No lock is held after bool() returns, so the event state may
   // immediately change after returning. Use with caution.
-  [[nodiscard]] bool isSignalled() const;
+  [[nodiscard]] MARL_NO_EXPORT inline bool isSignalled() const;
 
  private:
   struct Shared {
-    [[nodiscard]] Shared(Allocator* allocator);
-    void signal(eastl::move_only_function<void(void*)> const& new_ctor,
-                void (*new_dtor)(void*));
-    void* wait();
+    [[nodiscard]] MARL_NO_EXPORT inline Shared(Allocator* allocator);
+    template <typename... Args>
+    MARL_NO_EXPORT inline void signal(Args&&... args);
+    MARL_NO_EXPORT inline T& wait();
 
     marl::mutex mutex;
     ConditionVariable cv;
-    void (*dtor)(void*) = nullptr;
-    [[no_unique_address]] std::byte placeholder[0];
-    void* ptr() {
-      constexpr auto aligned_size = (sizeof(Shared) + 15ull) & ~(15ull);
-      constexpr auto offset = aligned_size - sizeof(Shared);
-      return &placeholder[offset];
-    }
-    void dispose() {
-      if (dtor) {
-        dtor(ptr());
-      }
-      dtor = nullptr;
-    }
-    ~Shared() { dispose(); }
+    eastl::optional<T> result;
   };
 
   const eastl::shared_ptr<Shared> shared;
 };
+template <typename T>
+inline Future<T>::Shared::Shared(Allocator* allocator) : cv(allocator) {}
 
-inline Future::Shared::Shared(Allocator* allocator) : cv(allocator) {}
-
-inline void* Future::Shared::wait() {
+template <typename T>
+inline T& Future<T>::Shared::wait() {
   marl::lock lock(mutex);
-  cv.wait(lock, [&] { return static_cast<bool>(dtor); });
-  return ptr();
+  cv.wait(lock, [&] { return static_cast<bool>(result); });
+  return *result;
 }
 
-inline Future::Future(size_t mem_size,
-                      Allocator* allocator /* = Allocator::Default */)
-    : shared([&]() {
-        auto aligned_size = (sizeof(Shared) + 15ull) & ~(15ull);
-        auto ptr = eastl::GetDefaultAllocator()->allocate(
-            aligned_size + mem_size, 0u, 0u);
-        return new (ptr) Shared{allocator};
-      }()) {}
+template <typename T>
+inline Future<T>::Future(Allocator* allocator /* = Allocator::Default */)
+    : shared(allocator->make_shared<Shared>(allocator)) {}
 
-inline void Future::signal(
-    eastl::move_only_function<void(void*)> const& new_ctor,
-    void (*new_dtor)(void*)) const {
-  shared->signal(new_ctor, new_dtor);
+template <typename T>
+template <typename... Args>
+  requires(std::is_constructible_v<T, Args && ...>)
+inline void Future<T>::signal(Args&&... args) const {
+  shared->signal(std::forward<Args>(args)...);
 }
 
-inline void Future::Shared::signal(
-    eastl::move_only_function<void(void*)> const& new_ctor,
-    void (*new_dtor)(void*)) {
+template <typename T>
+template <typename ... Args>
+inline void Future<T>::Shared::signal(Args&&... args) {
   marl::lock lock(mutex);
-  dispose();
-  new_ctor(ptr());
-  dtor = new_dtor;
+  result.reset();
+  result.emplace(std::forward<Args>(args)...);
   cv.notify_all();
 }
 
-inline void Future::clear() const {
+template <typename T>
+inline void Future<T>::clear() const {
   marl::lock lock(shared->mutex);
-  shared->dispose();
+  shared->result.reset();
 }
 
-inline void* Future::wait() const {
+template <typename T>
+inline T& Future<T>::wait() const {
   return shared->wait();
 }
 
-inline bool Future::test() const {
+template <typename T>
+inline bool Future<T>::test() const {
   marl::lock lock(shared->mutex);
   if (!shared->dtor) {
     return false;
@@ -132,7 +119,8 @@ inline bool Future::test() const {
   return true;
 }
 
-inline bool Future::isSignalled() const {
+template <typename T>
+inline bool Future<T>::isSignalled() const {
   marl::lock lock(shared->mutex);
   return shared->dtor;
 }
