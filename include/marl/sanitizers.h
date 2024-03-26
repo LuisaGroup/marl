@@ -15,84 +15,77 @@
 #ifndef marl_sanitizers_h
 #define marl_sanitizers_h
 
-// Define MARL_ADDRESS_SANITIZER_ENABLED to 1 if the project was built with the
+// Define ADDRESS_SANITIZER_ENABLED to 1 if the project was built with the
 // address sanitizer enabled (-fsanitize=address).
 #if defined(__SANITIZE_ADDRESS__)
-#define MARL_ADDRESS_SANITIZER_ENABLED 1
+#define ADDRESS_SANITIZER_ENABLED 1
 #else  // defined(__SANITIZE_ADDRESS__)
 #if defined(__clang__)
 #if __has_feature(address_sanitizer)
-#define MARL_ADDRESS_SANITIZER_ENABLED 1
+#define ADDRESS_SANITIZER_ENABLED 1
 #endif  // __has_feature(address_sanitizer)
 #endif  // defined(__clang__)
 #endif  // defined(__SANITIZE_ADDRESS__)
 
-// MARL_ADDRESS_SANITIZER_ONLY(X) resolves to X if
-// MARL_ADDRESS_SANITIZER_ENABLED is defined to a non-zero value, otherwise
-// MARL_ADDRESS_SANITIZER_ONLY() is stripped by the preprocessor.
-#if MARL_ADDRESS_SANITIZER_ENABLED
-#define MARL_ADDRESS_SANITIZER_ONLY(x) x
+// ADDRESS_SANITIZER_ONLY(X) resolves to X if ADDRESS_SANITIZER_ENABLED is
+// defined to a non-zero value, otherwise ADDRESS_SANITIZER_ONLY() is stripped
+// by the preprocessor.
+#if ADDRESS_SANITIZER_ENABLED
+#define ADDRESS_SANITIZER_ONLY(x) x
 #else
-#define MARL_ADDRESS_SANITIZER_ONLY(x)
-#endif  // MARL_ADDRESS_SANITIZER_ENABLED
+#define ADDRESS_SANITIZER_ONLY(x)
+#endif  // ADDRESS_SANITIZER_ENABLED
 
-// Define MARL_MEMORY_SANITIZER_ENABLED to 1 if the project was built with the
-// memory sanitizer enabled (-fsanitize=memory).
+// Define MEMORY_SANITIZER_ENABLED to 1 if the project was built with the memory
+// sanitizer enabled (-fsanitize=memory).
 #if defined(__SANITIZE_MEMORY__)
-#define MARL_MEMORY_SANITIZER_ENABLED 1
+#define MEMORY_SANITIZER_ENABLED 1
 #else  // defined(__SANITIZE_MEMORY__)
 #if defined(__clang__)
 #if __has_feature(memory_sanitizer)
-#define MARL_MEMORY_SANITIZER_ENABLED 1
+#define MEMORY_SANITIZER_ENABLED 1
 #endif  // __has_feature(memory_sanitizer)
 #endif  // defined(__clang__)
 #endif  // defined(__SANITIZE_MEMORY__)
 
-// MARL_MEMORY_SANITIZER_ONLY(X) resolves to X if MARL_MEMORY_SANITIZER_ENABLED
-// is defined to a non-zero value, otherwise MARL_MEMORY_SANITIZER_ONLY() is
-// stripped by the preprocessor.
-#if MARL_MEMORY_SANITIZER_ENABLED
-#define MARL_MEMORY_SANITIZER_ONLY(x) x
+// MEMORY_SANITIZER_ONLY(X) resolves to X if MEMORY_SANITIZER_ENABLED is defined
+// to a non-zero value, otherwise MEMORY_SANITIZER_ONLY() is stripped by the
+// preprocessor.
+#if MEMORY_SANITIZER_ENABLED
+#define MEMORY_SANITIZER_ONLY(x) x
 #else
-#define MARL_MEMORY_SANITIZER_ONLY(x)
-#endif  // MARL_MEMORY_SANITIZER_ENABLED
+#define MEMORY_SANITIZER_ONLY(x)
+#endif  // MEMORY_SANITIZER_ENABLED
 
-// Define MARL_THREAD_SANITIZER_ENABLED to 1 if the project was built with the
-// thread sanitizer enabled (-fsanitize=thread).
+// Define THREAD_SANITIZER_ENABLED to 1 if the project was built with the thread
+// sanitizer enabled (-fsanitize=thread).
 #if defined(__SANITIZE_THREAD__)
-#define MARL_THREAD_SANITIZER_ENABLED 1
+#define THREAD_SANITIZER_ENABLED 1
 #else  // defined(__SANITIZE_THREAD__)
 #if defined(__clang__)
 #if __has_feature(thread_sanitizer)
-#define MARL_THREAD_SANITIZER_ENABLED 1
+#define THREAD_SANITIZER_ENABLED 1
 #endif  // __has_feature(thread_sanitizer)
 #endif  // defined(__clang__)
 #endif  // defined(__SANITIZE_THREAD__)
 
-// MARL_THREAD_SANITIZER_ONLY(X) resolves to X if MARL_THREAD_SANITIZER_ENABLED
-// is defined to a non-zero value, otherwise MARL_THREAD_SANITIZER_ONLY() is
-// stripped by the preprocessor.
-#if MARL_THREAD_SANITIZER_ENABLED
-#define MARL_THREAD_SANITIZER_ONLY(x) x
+// THREAD_SANITIZER_ONLY(X) resolves to X if THREAD_SANITIZER_ENABLED is defined
+// to a non-zero value, otherwise THREAD_SANITIZER_ONLY() is stripped by the
+// preprocessor.
+#if THREAD_SANITIZER_ENABLED
+#define THREAD_SANITIZER_ONLY(x) x
 #else
-#define MARL_THREAD_SANITIZER_ONLY(x)
-#endif  // MARL_THREAD_SANITIZER_ENABLED
+#define THREAD_SANITIZER_ONLY(x)
+#endif  // THREAD_SANITIZER_ENABLED
 
-// Define MARL_UNDEFINED_SANITIZER_ENABLED to 1 if the project was built with
-// the undefined sanitizer enabled (-fsanitize=undefined).
-#if defined(__clang__)
-#if __has_feature(undefined_behavior_sanitizer)
-#define MARL_UNDEFINED_SANITIZER_ENABLED 1
-#endif  // __has_feature(undefined_behavior_sanitizer)
-#endif  // defined(__clang__)
-
-// MARL_UNDEFINED_SANITIZER_ONLY(X) resolves to X if
-// MARL_UNDEFINED_SANITIZER_ENABLED is defined to a non-zero value, otherwise
-// MARL_UNDEFINED_SANITIZER_ONLY() is stripped by the preprocessor.
-#if MARL_UNDEFINED_SANITIZER_ENABLED
-#define MARL_UNDEFINED_SANITIZER_ONLY(x) x
+// The MSAN_UNPOISON macro marks uninitialized memory as initialized for MSAN.
+// It can be used to suppress false-positive MSAN errors before reading
+// thread-local variables. See https://github.com/google/sanitizers/issues/1265
+#if MEMORY_SANITIZER_ENABLED
+#include <sanitizer/msan_interface.h>
+#define MSAN_UNPOISON(p, size) __msan_unpoison(p, size)
 #else
-#define MARL_UNDEFINED_SANITIZER_ONLY(x)
-#endif  // MARL_UNDEFINED_SANITIZER_ENABLED
+#define MSAN_UNPOISON(p, size)
+#endif
 
 #endif  // marl_sanitizers_h

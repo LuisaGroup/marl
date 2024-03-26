@@ -15,13 +15,13 @@
 #ifndef marl_future_h
 #define marl_future_h
 
-#include <EASTL/allocator.h>
-#include <EASTL/optional.h>
+#include <optional>
 #include <chrono>
 #include "conditionvariable.h"
 #include "containers.h"
 #include "export.h"
 #include "memory.h"
+#include <EASTL/optional.h>
 
 namespace marl {
 

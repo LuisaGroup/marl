@@ -25,8 +25,17 @@
 #include <memory>
 #include <mutex>
 #include <utility>  // std::forward
+#include <limits>   // std::numeric_limits
 #include <EASTL/unique_ptr.h>
 #include <EASTL/shared_ptr.h>
+
+namespace marl { using std::pair; using std::make_pair; }
+namespace marl { using std::array; using std::swap; }
+namespace marl { using eastl::unique_ptr; }
+namespace marl { using std::numeric_limits; }
+namespace marl { using eastl::make_shared; using eastl::shared_ptr; using eastl::weak_ptr; }
+namespace marl { using std::forward; using std::move; }
+namespace marl { using stdmutex = std::mutex; }
 
 namespace marl {
 
@@ -109,18 +118,18 @@ class Allocator {
 
   // unique_ptr<T> is an alias to eastl::unique_ptr<T, Deleter>.
   template <typename T>
-  using unique_ptr = eastl::unique_ptr<T, Deleter>;
+  using unique_ptr = marl::unique_ptr<T, Deleter>;
 
-  MARL_EXPORT ~Allocator();
+  virtual ~Allocator() = default;
 
   // allocate() allocates memory from the allocator.
   // The returned Allocation::request field must be equal to the Request
   // parameter.
-  MARL_EXPORT Allocation allocate(const Allocation::Request&);
+  virtual Allocation allocate(const Allocation::Request&) = 0;
 
   // free() frees the memory returned by allocate().
   // The Allocation must have all fields equal to those returned by allocate().
-  MARL_EXPORT void free(const Allocation&);
+  virtual void free(const Allocation&) = 0;
 
   // create() allocates and constructs an object of type T, respecting the
   // alignment of the type.
@@ -146,8 +155,9 @@ class Allocator {
   // make_shared() returns a new object allocated from the allocator
   // wrapped in a eastl::shared_ptr that respects the alignment of the type.
   template <typename T, typename... ARGS>
-  inline eastl::shared_ptr<T> make_shared(ARGS&&... args);
+  inline marl::shared_ptr<T> make_shared(ARGS&&... args);
 
+ protected:
   Allocator() = default;
 };
 
@@ -155,8 +165,8 @@ class Allocator {
 // Allocator::Deleter
 ///////////////////////////////////////////////////////////////////////////////
 Allocator::Deleter::Deleter() : allocator(nullptr) {}
-Allocator::Deleter::Deleter(Allocator* allocator_, size_t count_)
-    : allocator(allocator_), count(count_) {}
+Allocator::Deleter::Deleter(Allocator* allocator, size_t count)
+    : allocator(allocator), count(count) {}
 
 template <typename T>
 void Allocator::Deleter::operator()(T* object) {
@@ -219,7 +229,7 @@ Allocator::unique_ptr<T> Allocator::make_unique_n(size_t n, ARGS&&... args) {
 }
 
 template <typename T, typename... ARGS>
-eastl::shared_ptr<T> Allocator::make_shared(ARGS&&... args) {
+marl::shared_ptr<T> Allocator::make_shared(ARGS&&... args) {
   Allocation::Request request;
   request.size = sizeof(T);
   request.alignment = alignof(T);
@@ -227,7 +237,109 @@ eastl::shared_ptr<T> Allocator::make_shared(ARGS&&... args) {
 
   auto alloc = allocate(request);
   new (alloc.ptr) T(std::forward<ARGS>(args)...);
-  return eastl::shared_ptr<T>(reinterpret_cast<T*>(alloc.ptr), Deleter{this, 1});
+  return marl::shared_ptr<T>(reinterpret_cast<T*>(alloc.ptr), Deleter{this, 1});
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// TrackedAllocator
+///////////////////////////////////////////////////////////////////////////////
+
+// TrackedAllocator wraps an Allocator to track the allocations made.
+class TrackedAllocator : public Allocator {
+ public:
+  struct UsageStats {
+    // Total number of allocations.
+    size_t count = 0;
+    // total allocation size in bytes (as requested, may be higher due to
+    // alignment or guards).
+    size_t bytes = 0;
+  };
+
+  struct Stats {
+    // numAllocations() returns the total number of allocations across all
+    // usages for the allocator.
+    inline size_t numAllocations() const;
+
+    // bytesAllocated() returns the total number of bytes allocated across all
+    // usages for the allocator.
+    inline size_t bytesAllocated() const;
+
+    // Statistics per usage.
+    marl::array<UsageStats, size_t(Allocation::Usage::Count)> byUsage;
+  };
+
+  // Constructor that wraps an existing allocator.
+  inline TrackedAllocator(Allocator* allocator);
+
+  // stats() returns the current allocator statistics.
+  inline Stats stats();
+
+  // Allocator compliance
+  inline Allocation allocate(const Allocation::Request&) override;
+  inline void free(const Allocation&) override;
+
+ private:
+  Allocator* const allocator;
+  marl::stdmutex mutex;
+  Stats stats_;
+};
+
+size_t TrackedAllocator::Stats::numAllocations() const {
+  size_t out = 0;
+  for (auto& stats : byUsage) {
+    out += stats.count;
+  }
+  return out;
+}
+
+size_t TrackedAllocator::Stats::bytesAllocated() const {
+  size_t out = 0;
+  for (auto& stats : byUsage) {
+    out += stats.bytes;
+  }
+  return out;
+}
+
+TrackedAllocator::TrackedAllocator(Allocator* allocator)
+    : allocator(allocator) {}
+
+namespace
+{
+struct __simple_lock
+{
+  inline __simple_lock(marl::stdmutex& mutex) : pmutex(&mutex) { pmutex->lock(); }
+  inline ~__simple_lock() { pmutex->unlock(); }
+  marl::stdmutex* pmutex;
+};
+}
+
+TrackedAllocator::Stats TrackedAllocator::stats() {
+  __simple_lock lock(mutex);
+  return stats_;
+}
+
+Allocation TrackedAllocator::allocate(const Allocation::Request& request) {
+  {
+    __simple_lock lock(mutex);
+    auto& usageStats = stats_.byUsage[int(request.usage)];
+    ++usageStats.count;
+    usageStats.bytes += request.size;
+  }
+  return allocator->allocate(request);
+}
+
+void TrackedAllocator::free(const Allocation& allocation) {
+  {
+    __simple_lock lock(mutex);
+    auto& usageStats = stats_.byUsage[int(allocation.request.usage)];
+    MARL_ASSERT(usageStats.count > 0,
+                "TrackedAllocator detected abnormal free()");
+    MARL_ASSERT(usageStats.bytes >= allocation.request.size,
+                "TrackedAllocator detected abnormal free()");
+    --usageStats.count;
+    usageStats.bytes -= allocation.request.size;
+  }
+  return allocator->free(allocation);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -297,7 +409,7 @@ struct StlAllocator {
 };
 
 template <typename T>
-StlAllocator<T>::StlAllocator(Allocator* allocator_) : allocator(allocator_) {}
+StlAllocator<T>::StlAllocator(Allocator* allocator) : allocator(allocator) {}
 
 template <typename T>
 template <typename U>
@@ -331,7 +443,7 @@ void StlAllocator<T>::deallocate(T* p, std::size_t n) {
 
 template <typename T>
 typename StlAllocator<T>::size_type StlAllocator<T>::max_size() const {
-  return std::numeric_limits<size_type>::max() / sizeof(value_type);
+  return marl::numeric_limits<size_type>::max() / sizeof(value_type);
 }
 
 template <typename T>

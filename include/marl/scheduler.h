@@ -24,15 +24,14 @@
 #include "sanitizers.h"
 #include "task.h"
 #include "thread.h"
-#include "thread_local.h"
 
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <EASTL/functional.h>
-#include <EASTL/algorithm.h>
+
 #include <thread>
+
 
 namespace marl {
 
@@ -49,8 +48,8 @@ class Scheduler {
 
  public:
   using TimePoint = std::chrono::system_clock::time_point;
-  using Predicate = eastl::function<bool()>;
-  using ThreadInitializer = eastl::function<void(int workerId)>;
+  using Predicate = marl::function<bool()>;
+  using ThreadInitializer = marl::function<void(int workerId)>;
 
   // Config holds scheduler configuration settings that can be passed to the
   // Scheduler constructor.
@@ -67,7 +66,7 @@ class Scheduler {
       ThreadInitializer initializer;
 
       // Thread affinity policy to use for worker threads.
-      eastl::shared_ptr<Thread::Affinity::Policy> affinityPolicy;
+      marl::shared_ptr<Thread::Affinity::Policy> affinityPolicy;
     };
 
     WorkerThread workerThread;
@@ -91,7 +90,7 @@ class Scheduler {
     MARL_NO_EXPORT inline Config& setWorkerThreadInitializer(
         const ThreadInitializer&);
     MARL_NO_EXPORT inline Config& setWorkerThreadAffinityPolicy(
-        const eastl::shared_ptr<Thread::Affinity::Policy>&);
+        const marl::shared_ptr<Thread::Affinity::Policy>&);
   };
 
   // Constructor.
@@ -258,7 +257,7 @@ class Scheduler {
         Allocator* allocator,
         uint32_t id,
         size_t stackSize,
-        const eastl::function<void()>& func);
+        const marl::function<void()>& func);
 
     // createFromCurrentThread() constructs and returns a new fiber with the
     // given identifier for the current thread.
@@ -270,6 +269,9 @@ class Scheduler {
     // Used for debugging.
     static const char* toString(State state);
 
+#ifdef SKR_PROFILE_ENABLE
+    skr::String name;
+#endif
     Allocator::unique_ptr<OSFiber> const impl;
     Worker* const worker;
     State state = State::Running;  // Guarded by Worker's work.mutex.
@@ -340,53 +342,53 @@ class Scheduler {
     Worker(Scheduler* scheduler, Mode mode, uint32_t id);
 
     // start() begins execution of the worker.
-    void start() EXCLUDES(work.mutex);
+    void start() MARL_EXCLUDES(work.mutex);
 
     // stop() ceases execution of the worker, blocking until all pending
     // tasks have fully finished.
-    void stop() EXCLUDES(work.mutex);
+    void stop() MARL_EXCLUDES(work.mutex);
 
     // wait() suspends execution of the current task until the predicate pred
     // returns true or the optional timeout is reached.
     // See Fiber::wait() for more information.
     MARL_EXPORT
     bool wait(marl::lock& lock, const TimePoint* timeout, const Predicate& pred)
-        EXCLUDES(work.mutex);
+        MARL_EXCLUDES(work.mutex);
 
     // wait() suspends execution of the current task until the fiber is
     // notified, or the optional timeout is reached.
     // See Fiber::wait() for more information.
     MARL_EXPORT
-    bool wait(const TimePoint* timeout) EXCLUDES(work.mutex);
+    bool wait(const TimePoint* timeout) MARL_EXCLUDES(work.mutex);
 
     // suspend() suspends the currently executing Fiber until the fiber is
     // woken with a call to enqueue(Fiber*), or automatically sometime after the
     // optional timeout.
-    void suspend(const TimePoint* timeout) REQUIRES(work.mutex);
+    void suspend(const TimePoint* timeout) MARL_REQUIRES(work.mutex);
 
     // enqueue(Fiber*) enqueues resuming of a suspended fiber.
-    void enqueue(Fiber* fiber) EXCLUDES(work.mutex);
+    void enqueue(Fiber* fiber) MARL_EXCLUDES(work.mutex);
 
     // enqueue(Task&&) enqueues a new, unstarted task.
-    void enqueue(Task&& task) EXCLUDES(work.mutex);
+    void enqueue(Task&& task) MARL_EXCLUDES(work.mutex);
 
     // tryLock() attempts to lock the worker for task enqueuing.
     // If the lock was successful then true is returned, and the caller must
     // call enqueueAndUnlock().
-    bool tryLock() EXCLUDES(work.mutex) TRY_ACQUIRE(true, work.mutex);
+    bool tryLock() MARL_EXCLUDES(work.mutex) MARL_TRY_ACQUIRE(true, work.mutex);
 
     // enqueueAndUnlock() enqueues the task and unlocks the worker.
     // Must only be called after a call to tryLock() which returned true.
     // _Releases_lock_(work.mutex)
-    void enqueueAndUnlock(Task&& task) REQUIRES(work.mutex) RELEASE(work.mutex);
+    void enqueueAndUnlock(Task&& task) MARL_REQUIRES(work.mutex) MARL_RELEASE(work.mutex);
 
     // runUntilShutdown() processes all tasks and fibers until there are no more
     // and shutdown is true, upon runUntilShutdown() returns.
-    void runUntilShutdown() REQUIRES(work.mutex);
+    void runUntilShutdown() MARL_REQUIRES(work.mutex);
 
     // steal() attempts to steal a Task from the worker for another worker.
     // Returns true if a task was taken and assigned to out, otherwise false.
-    bool steal(Task& out) EXCLUDES(work.mutex);
+    bool steal(Task& out) MARL_EXCLUDES(work.mutex);
 
     // getCurrent() returns the Worker currently bound to the current
     // thread.
@@ -401,55 +403,54 @@ class Scheduler {
    private:
     // run() is the task processing function for the worker.
     // run() processes tasks until stop() is called.
-    void run() REQUIRES(work.mutex);
+    void run() MARL_REQUIRES(work.mutex);
 
     // createWorkerFiber() creates a new fiber that when executed calls
     // run().
-    Fiber* createWorkerFiber() REQUIRES(work.mutex);
+    Fiber* createWorkerFiber() MARL_REQUIRES(work.mutex);
 
     // switchToFiber() switches execution to the given fiber. The fiber
     // must belong to this worker.
-    void switchToFiber(Fiber*) REQUIRES(work.mutex);
+    void switchToFiber(Fiber*) MARL_REQUIRES(work.mutex);
 
     // runUntilIdle() executes all pending tasks and then returns.
-    void runUntilIdle() REQUIRES(work.mutex);
+    void runUntilIdle() MARL_REQUIRES(work.mutex);
 
     // waitForWork() blocks until new work is available, potentially calling
     // spinForWork().
-    void waitForWork() REQUIRES(work.mutex);
+    void waitForWork() MARL_REQUIRES(work.mutex);
 
-    // spinForWorkAndLock() attempts to steal work from another Worker, and keeps
+    // spinForWork() attempts to steal work from another Worker, and keeps
     // the thread awake for a short duration. This reduces overheads of
-    // frequently putting the thread to sleep and re-waking. It locks the mutex
-    // before returning so that a stolen task cannot be re-stolen by other workers.
-    void spinForWorkAndLock() ACQUIRE(work.mutex);
+    // frequently putting the thread to sleep and re-waking.
+    void spinForWork();
 
     // enqueueFiberTimeouts() enqueues all the fibers that have finished
     // waiting.
-    void enqueueFiberTimeouts() REQUIRES(work.mutex);
+    void enqueueFiberTimeouts() MARL_REQUIRES(work.mutex);
 
     inline void changeFiberState(Fiber* fiber,
                                  Fiber::State from,
-                                 Fiber::State to) const REQUIRES(work.mutex);
+                                 Fiber::State to) const MARL_REQUIRES(work.mutex);
 
     inline void setFiberState(Fiber* fiber, Fiber::State to) const
-        REQUIRES(work.mutex);
+        MARL_REQUIRES(work.mutex);
 
     // Work holds tasks and fibers that are enqueued on the Worker.
     struct Work {
       inline Work(Allocator*);
 
       std::atomic<uint64_t> num = {0};  // tasks.size() + fibers.size()
-      GUARDED_BY(mutex) uint64_t numBlockedFibers = 0;
-      GUARDED_BY(mutex) TaskQueue tasks;
-      GUARDED_BY(mutex) FiberQueue fibers;
-      GUARDED_BY(mutex) WaitingFibers waiting;
-      GUARDED_BY(mutex) bool notifyAdded = true;
+      MARL_GUARDED_BY(mutex) uint64_t numBlockedFibers = 0;
+      MARL_GUARDED_BY(mutex) TaskQueue tasks;
+      MARL_GUARDED_BY(mutex) FiberQueue fibers;
+      MARL_GUARDED_BY(mutex) WaitingFibers waiting;
+      MARL_GUARDED_BY(mutex) bool notifyAdded = true;
       std::condition_variable added;
       marl::mutex mutex;
 
       template <typename F>
-      inline void wait(F&&) REQUIRES(mutex);
+      inline void wait(F&&) MARL_REQUIRES(mutex);
     };
 
     // https://en.wikipedia.org/wiki/Xorshift
@@ -467,7 +468,7 @@ class Scheduler {
     };
 
     // The current worker bound to the current thread.
-    MARL_DECLARE_THREAD_LOCAL(Worker*, current);
+    static thread_local Worker* current;
 
     Mode const mode;
     Scheduler* const scheduler;
@@ -495,16 +496,16 @@ class Scheduler {
   static void setBound(Scheduler* scheduler);
 
   // The scheduler currently bound to the current thread.
-  MARL_DECLARE_THREAD_LOCAL(Scheduler*, bound);
+  static thread_local Scheduler* bound;
 
   // The immutable configuration used to build the scheduler.
   const Config cfg;
 
-  std::array<std::atomic<int>, MaxWorkerThreads> spinningWorkers;
+  marl::array<std::atomic<int>, 8> spinningWorkers;
   std::atomic<unsigned int> nextSpinningWorkerIdx = {0x8000000};
 
   std::atomic<unsigned int> nextEnqueueIndex = {0};
-  std::array<Worker*, MaxWorkerThreads> workerThreads;
+  marl::array<Worker*, MaxWorkerThreads> workerThreads;
 
   struct SingleThreadedWorkers {
     inline SingleThreadedWorkers(Allocator*);
@@ -513,8 +514,8 @@ class Scheduler {
         containers::unordered_map<std::thread::id,
                                   Allocator::unique_ptr<Worker>>;
     marl::mutex mutex;
-    GUARDED_BY(mutex) std::condition_variable unbind;
-    GUARDED_BY(mutex) WorkerByTid byTid;
+    MARL_GUARDED_BY(mutex) std::condition_variable unbind;
+    MARL_GUARDED_BY(mutex) WorkerByTid byTid;
   };
   SingleThreadedWorkers singleThreadedWorkers;
 };
@@ -544,7 +545,7 @@ Scheduler::Config& Scheduler::Config::setWorkerThreadInitializer(
 }
 
 Scheduler::Config& Scheduler::Config::setWorkerThreadAffinityPolicy(
-    const eastl::shared_ptr<Thread::Affinity::Policy>& policy) {
+    const marl::shared_ptr<Thread::Affinity::Policy>& policy) {
   workerThread.affinityPolicy = policy;
   return *this;
 }
@@ -577,6 +578,7 @@ bool Scheduler::Fiber::wait(
 }
 
 Scheduler::Worker* Scheduler::Worker::getCurrent() {
+  MSAN_UNPOISON(&current, sizeof(Worker*));
   return Worker::current;
 }
 

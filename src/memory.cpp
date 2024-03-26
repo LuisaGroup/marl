@@ -20,12 +20,10 @@
 #include <EASTL/allocator.h>
 #include <cstring>
 
-
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__APPLE__) || \
-    defined(__EMSCRIPTEN__)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__APPLE__)
 #include <sys/mman.h>
 #include <unistd.h>
-namespace marl::detail {
+namespace {
 // This was a static in pageSize(), but due to the following TSAN false-positive
 // bug, this has been moved out to a global.
 // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=68338
@@ -52,12 +50,12 @@ inline void protectPage(void* addr) {
   (void)res;
   MARL_ASSERT(res == 0, "Failed to protect page at %p", addr);
 }
-}  // namespace marl::detail
+}  // anonymous namespace
 #elif defined(__Fuchsia__)
 #include <unistd.h>
 #include <zircon/process.h>
 #include <zircon/syscalls.h>
-namespace marl::detail {
+namespace {
 // This was a static in pageSize(), but due to the following TSAN false-positive
 // bug, this has been moved out to a global.
 // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=68338
@@ -94,11 +92,14 @@ inline void protectPage(void* addr) {
   (void)status;
   MARL_ASSERT(status == ZX_OK, "Failed to protect page at %p", addr);
 }
-}  // namespace marl::detail
+}  // anonymous namespace
 #elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN 1
+#endif
+
 #include <Windows.h>
-namespace marl::detail {
+namespace {
 inline size_t pageSize() {
   static auto size = [] {
     SYSTEM_INFO systemInfo = {};
@@ -125,12 +126,12 @@ inline void protectPage(void* addr) {
   (void)res;
   MARL_ASSERT(res != 0, "Failed to protect page at %p", addr);
 }
-}  // namespace marl::detail
+}  // anonymous namespace
 #else
 #error "Page based allocation not implemented for this platform"
 #endif
 
-namespace marl::detail {
+namespace {
 
 // pagedMalloc() allocates size bytes of uninitialized storage with the
 // specified minimum byte alignment using OS specific page mapping calls.
@@ -180,43 +181,52 @@ void pagedFree(void* ptr,
   freePages(ptr, numTotalPages);
 }
 
-}  // namespace marl::detail
+class DefaultAllocator : public marl::Allocator {
+ public:
+  static DefaultAllocator instance;
+
+  virtual marl::Allocation allocate(
+      const marl::Allocation::Request& request) override {
+    void* ptr = nullptr;
+
+    if (request.useGuards) {
+      ptr = ::pagedMalloc(request.alignment, request.size, true, true);
+    } else {
+      ptr = eastl::GetDefaultAllocator()->allocate(request.size,
+                                                   request.alignment, 0u);
+    }
+
+    MARL_ASSERT(ptr != nullptr, "Allocation failed");
+    MARL_ASSERT(reinterpret_cast<uintptr_t>(ptr) % request.alignment == 0,
+                "Allocation gave incorrect alignment");
+
+    marl::Allocation allocation;
+    allocation.ptr = ptr;
+    allocation.request = request;
+    return allocation;
+  }
+
+  virtual void free(const marl::Allocation& allocation) override {
+    if (allocation.request.useGuards) {
+      ::pagedFree(allocation.ptr, allocation.request.alignment,
+                  allocation.request.size, true, true);
+    } else {
+      eastl::GetDefaultAllocator()->deallocate(allocation.ptr,
+                                               allocation.request.size);
+    }
+  }
+};
+
+DefaultAllocator DefaultAllocator::instance;
+
+}  // anonymous namespace
 
 namespace marl {
-marl::Allocation Allocator::allocate(const marl::Allocation::Request& request) {
-  void* ptr = nullptr;
 
-  if (request.useGuards) {
-    ptr = detail::pagedMalloc(request.alignment, request.size, true, true);
-  } else {
-    ptr = eastl::GetDefaultAllocator()->allocate(request.size,
-                                                 request.alignment, 0u);
-  }
-
-  MARL_ASSERT(ptr != nullptr, "Allocation failed");
-  MARL_ASSERT(reinterpret_cast<uintptr_t>(ptr) % request.alignment == 0,
-              "Allocation gave incorrect alignment");
-
-  marl::Allocation allocation;
-  allocation.ptr = ptr;
-  allocation.request = request;
-  return allocation;
-}
-
-void Allocator::free(const marl::Allocation& allocation) {
-  if (allocation.request.useGuards) {
-    detail::pagedFree(allocation.ptr, allocation.request.alignment,
-                      allocation.request.size, true, true);
-  } else {
-    eastl::GetDefaultAllocator()->deallocate(allocation.ptr, allocation.request.size);
-  }
-}
-Allocator::~Allocator() = default;
-static Allocator alloc;
-Allocator* Allocator::Default = &alloc;
+Allocator* Allocator::Default = &DefaultAllocator::instance;
 
 size_t pageSize() {
-  return detail::pageSize();
+  return ::pageSize();
 }
 
 }  // namespace marl

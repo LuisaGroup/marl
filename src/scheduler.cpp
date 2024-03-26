@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "osfiber.h"  // Must come first. See osfiber_ucontext.h.
+#include "marl/osfiber.h"  // Must come first. See osfiber_ucontext.h.
 
 #include "marl/scheduler.h"
 
@@ -84,14 +84,15 @@ namespace marl {
 ////////////////////////////////////////////////////////////////////////////////
 // Scheduler
 ////////////////////////////////////////////////////////////////////////////////
-MARL_INSTANTIATE_THREAD_LOCAL(Scheduler*, Scheduler::bound, nullptr);
+thread_local Scheduler* Scheduler::bound = nullptr;
 
 Scheduler* Scheduler::get() {
+  MSAN_UNPOISON(&bound, sizeof(Scheduler*));
   return bound;
 }
 
 void Scheduler::setBound(Scheduler* scheduler) {
-  bound = scheduler;
+    bound = scheduler;
 }
 
 void Scheduler::bind() {
@@ -114,12 +115,23 @@ void Scheduler::unbind() {
   {
     marl::lock lock(get()->singleThreadedWorkers.mutex);
     auto tid = std::this_thread::get_id();
+    // auto it = get()->singleThreadedWorkers.byTid.find(tid);
+    // MARL_ASSERT(it != get()->singleThreadedWorkers.byTid.end(),
+    //            "singleThreadedWorker not found");
+    // MARL_ASSERT(it->second.get() == worker, "worker is not bound?");
+    
+    // CHERRY-PICKED FROM: 40ce132, Cache workers in variable to speedup access
     auto& workers = get()->singleThreadedWorkers.byTid;
     auto it = workers.find(tid);
     MARL_ASSERT(it != workers.end(), "singleThreadedWorker not found");
     MARL_ASSERT(it->second.get() == worker, "worker is not bound?");
     workers.erase(it);
-    if (workers.empty()) {
+    if (workers.empty()) { 
+    // CHERRY-PICKED END
+
+    // get()->singleThreadedWorkers.byTid.erase(it);
+    // if (get()->singleThreadedWorkers.byTid.empty()) {
+      
       get()->singleThreadedWorkers.unbind.notify_one();
     }
   }
@@ -130,8 +142,10 @@ Scheduler::Scheduler(const Config& config)
     : cfg(setConfigDefaults(config)),
       workerThreads{},
       singleThreadedWorkers(config.allocator) {
-  for (int i = 0; i < cfg.workerThread.count; i++) {
+  for (size_t i = 0; i < spinningWorkers.size(); i++) {
     spinningWorkers[i] = -1;
+  }
+  for (int i = 0; i < cfg.workerThread.count; i++) {
     workerThreads[i] =
         cfg.allocator->create<Worker>(this, Worker::Mode::MultiThreaded, i);
   }
@@ -145,7 +159,7 @@ Scheduler::~Scheduler() {
     // Wait until all the single threaded workers have been unbound.
     marl::lock lock(singleThreadedWorkers.mutex);
     lock.wait(singleThreadedWorkers.unbind,
-              [this]() REQUIRES(singleThreadedWorkers.mutex) {
+              [this]() MARL_REQUIRES(singleThreadedWorkers.mutex) {
                 return singleThreadedWorkers.byTid.empty();
               });
   }
@@ -168,7 +182,7 @@ void Scheduler::enqueue(Task&& task) {
   if (cfg.workerThread.count > 0) {
     while (true) {
       // Prioritize workers that have recently started spinning.
-      auto i = --nextSpinningWorkerIdx % cfg.workerThread.count;
+      auto i = --nextSpinningWorkerIdx % spinningWorkers.size();
       auto idx = spinningWorkers[i].exchange(-1);
       if (idx < 0) {
         // If a spinning worker couldn't be found, round-robin the
@@ -210,7 +224,7 @@ bool Scheduler::stealWork(Worker* thief, uint64_t from, Task& out) {
 }
 
 void Scheduler::onBeginSpinning(int workerId) {
-  auto idx = nextSpinningWorkerIdx++ % cfg.workerThread.count;
+  auto idx = nextSpinningWorkerIdx++ % spinningWorkers.size();
   spinningWorkers[idx] = workerId;
 }
 
@@ -227,6 +241,9 @@ Scheduler::Config Scheduler::Config::allCores() {
 Scheduler::Fiber::Fiber(Allocator::unique_ptr<OSFiber>&& impl, uint32_t id)
     : id(id), impl(std::move(impl)), worker(Worker::getCurrent()) {
   MARL_ASSERT(worker != nullptr, "No Scheduler::Worker bound");
+#ifdef SKR_PROFILE_ENABLE
+  name = skr::format(u8"fiber", (uint64_t)this->impl.get());
+#endif
 }
 
 Scheduler::Fiber* Scheduler::Fiber::current() {
@@ -250,7 +267,15 @@ void Scheduler::Fiber::switchTo(Fiber* to) {
               "Scheduler::Fiber::switchTo() must only be called on the "
               "currently executing fiber");
   if (to != this) {
+#ifdef SKR_PROFILE_ENABLE
+    //Leave current fiber
+    if( id ) SkrFiberLeave;
+#endif
     impl->switchTo(to->impl.get());
+#ifdef SKR_PROFILE_ENABLE
+    //We are back
+    if( to->id ) SkrFiberEnter(name.c_str());
+#endif
   }
 }
 
@@ -258,7 +283,7 @@ Allocator::unique_ptr<Scheduler::Fiber> Scheduler::Fiber::create(
     Allocator* allocator,
     uint32_t id,
     size_t stackSize,
-    const eastl::function<void()>& func) {
+    const marl::function<void()>& func) {
   return allocator->make_unique<Fiber>(
       OSFiber::createFiber(allocator, stackSize, func), id);
 }
@@ -350,9 +375,7 @@ bool Scheduler::WaitingFibers::Timeout::operator<(const Timeout& o) const {
 ////////////////////////////////////////////////////////////////////////////////
 // Scheduler::Worker
 ////////////////////////////////////////////////////////////////////////////////
-MARL_INSTANTIATE_THREAD_LOCAL(Scheduler::Worker*,
-                              Scheduler::Worker::current,
-                              nullptr);
+thread_local Scheduler::Worker* Scheduler::Worker::current = nullptr;
 
 Scheduler::Worker::Worker(Scheduler* scheduler, Mode mode, uint32_t id)
     : id(id),
@@ -367,7 +390,7 @@ void Scheduler::Worker::start() {
       auto allocator = scheduler->cfg.allocator;
       auto& affinityPolicy = scheduler->cfg.workerThread.affinityPolicy;
       auto affinity = affinityPolicy->get(id, allocator);
-      thread = Thread(std::move(affinity), [=, this] {
+      thread = Thread(std::move(affinity), [=] {
         Thread::setName("Thread<%.2d>", int(id));
 
         if (auto const& initFunc = scheduler->cfg.workerThread.initializer) {
@@ -376,7 +399,7 @@ void Scheduler::Worker::start() {
 
         Scheduler::setBound(scheduler);
         Worker::current = this;
-        mainFiber = Fiber::createFromCurrentThread(scheduler->cfg.allocator, 0);
+        mainFiber = Fiber::createFromCurrentThread(scheduler->cfg.allocator, 1);
         currentFiber = mainFiber.get();
         {
           marl::lock lock(work.mutex);
@@ -401,7 +424,9 @@ void Scheduler::Worker::start() {
 void Scheduler::Worker::stop() {
   switch (mode) {
     case Mode::MultiThreaded: {
-      enqueue(Task([this] { shutdown = true; }, Task::Flags::SameThread));
+      enqueue(Task([this] { 
+        shutdown = true; 
+      }, Task::Flags::SameThread));
       thread.join();
       break;
     }
@@ -566,17 +591,22 @@ bool Scheduler::Worker::steal(Task& out) {
 }
 
 void Scheduler::Worker::run() {
+  //Enter worker fiber
+#ifdef SKR_PROFILE_ENABLE
+  if( Fiber::current()->id ) SkrFiberEnter(Fiber::current()->name.c_str());
+#endif
   if (mode == Mode::MultiThreaded) {
     MARL_NAME_THREAD("Thread<%.2d> Fiber<%.2d>", int(id), Fiber::current()->id);
     // This is the entry point for a multi-threaded worker.
     // Start with a regular condition-variable wait for work. This avoids
-    // starting the thread with a spinForWorkAndLock().
-    work.wait([this]() REQUIRES(work.mutex) {
+    // starting the thread with a spinForWork().
+    work.wait([this]() MARL_REQUIRES(work.mutex) {
       return work.num > 0 || work.waiting || shutdown;
     });
   }
   ASSERT_FIBER_STATE(currentFiber, Fiber::State::Running);
   runUntilShutdown();
+
   switchToFiber(mainFiber.get());
 }
 
@@ -597,10 +627,11 @@ void Scheduler::Worker::waitForWork() {
   if (mode == Mode::MultiThreaded) {
     scheduler->onBeginSpinning(id);
     work.mutex.unlock();
-    spinForWorkAndLock();
+    spinForWork();
+    work.mutex.lock();
   }
 
-  work.wait([this]() REQUIRES(work.mutex) {
+  work.wait([this]() MARL_REQUIRES(work.mutex) {
     return work.num > 0 || (shutdown && work.numBlockedFibers == 0U);
   });
   if (work.waiting) {
@@ -634,7 +665,7 @@ void Scheduler::Worker::setFiberState(Fiber* fiber, Fiber::State to) const {
   fiber->state = to;
 }
 
-void Scheduler::Worker::spinForWorkAndLock() {
+void Scheduler::Worker::spinForWork() {
   TRACE("SPIN");
   Task stolen;
 
@@ -649,21 +680,13 @@ void Scheduler::Worker::spinForWorkAndLock() {
       nop(); nop(); nop(); nop(); nop(); nop(); nop(); nop();
       nop(); nop(); nop(); nop(); nop(); nop(); nop(); nop();
       // clang-format on
-
       if (work.num > 0) {
-        work.mutex.lock();
-        if (work.num > 0) {
-          return;
-        }
-        else {
-          // Our new task was stolen by another worker. Keep spinning.
-          work.mutex.unlock();
-        }
+        return;
       }
     }
 
     if (scheduler->stealWork(this, rng(), stolen)) {
-      work.mutex.lock();
+      marl::lock lock(work.mutex);
       work.tasks.emplace_back(std::move(stolen));
       work.num++;
       return;
@@ -671,7 +694,6 @@ void Scheduler::Worker::spinForWorkAndLock() {
 
     std::this_thread::yield();
   }
-  work.mutex.lock();
 }
 
 void Scheduler::Worker::runUntilIdle() {
@@ -722,7 +744,7 @@ Scheduler::Fiber* Scheduler::Worker::createWorkerFiber() {
   DBG_LOG("%d: CREATE(%d)", (int)id, (int)fiberId);
   auto fiber = Fiber::create(scheduler->cfg.allocator, fiberId,
                              scheduler->cfg.fiberStackSize,
-                             [&]() REQUIRES(work.mutex) { run(); });
+                             [&]() MARL_REQUIRES(work.mutex) { run(); });
   auto ptr = fiber.get();
   workerFibers.emplace_back(std::move(fiber));
   return ptr;

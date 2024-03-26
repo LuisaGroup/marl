@@ -54,7 +54,7 @@ class Pool {
   class Loan {
    public:
     MARL_NO_EXPORT inline Loan() = default;
-    MARL_NO_EXPORT inline Loan(Item*, const eastl::shared_ptr<Storage>&);
+    MARL_NO_EXPORT inline Loan(Item*, const marl::shared_ptr<Storage>&);
     MARL_NO_EXPORT inline Loan(const Loan&);
     MARL_NO_EXPORT inline Loan(Loan&&);
     MARL_NO_EXPORT inline ~Loan();
@@ -67,7 +67,7 @@ class Pool {
 
    private:
     Item* item = nullptr;
-    eastl::shared_ptr<Storage> storage;
+    marl::shared_ptr<Storage> storage;
   };
 
  protected:
@@ -124,7 +124,7 @@ void Pool<T>::Item::destruct() {
 // Pool<T>::Loan
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
-Pool<T>::Loan::Loan(Item* item, const eastl::shared_ptr<Storage>& storage)
+Pool<T>::Loan::Loan(Item* item, const marl::shared_ptr<Storage>& storage)
     : item(item), storage(storage) {
   item->refcount++;
 }
@@ -175,8 +175,8 @@ typename Pool<T>::Loan& Pool<T>::Loan::operator=(const Loan& rhs) {
 template <typename T>
 typename Pool<T>::Loan& Pool<T>::Loan::operator=(Loan&& rhs) {
   reset();
-  std::swap(item, rhs.item);
-  std::swap(storage, rhs.storage);
+  marl::swap(item, rhs.item);
+  marl::swap(storage, rhs.storage);
   return *this;
 }
 
@@ -227,7 +227,7 @@ class BoundedPool : public Pool<T> {
   // blocking.
   // The boolean of the returned pair is true on success, or false if the pool
   // is empty.
-  MARL_NO_EXPORT inline std::pair<Loan, bool> tryBorrow() const;
+  MARL_NO_EXPORT inline marl::pair<Loan, bool> tryBorrow() const;
 
  private:
   class Storage : public Pool<T>::Storage {
@@ -235,18 +235,13 @@ class BoundedPool : public Pool<T> {
     MARL_NO_EXPORT inline Storage(Allocator* allocator);
     MARL_NO_EXPORT inline ~Storage();
     MARL_NO_EXPORT inline void return_(Item*) override;
-    // We cannot copy this as the Item pointers would be shared and
-    // deleted at a wrong point. We cannot move this because we return
-    // pointers into items[N].
-    MARL_NO_EXPORT inline Storage(const Storage&) = delete;
-    MARL_NO_EXPORT inline Storage& operator=(const Storage&) = delete;
 
     Item items[N];
     marl::mutex mutex;
     ConditionVariable returned;
     Item* free = nullptr;
   };
-  eastl::shared_ptr<Storage> storage;
+  marl::shared_ptr<Storage> storage;
 };
 
 template <typename T, int N, PoolPolicy POLICY>
@@ -299,13 +294,13 @@ void BoundedPool<T, N, POLICY>::borrow(size_t n, const F& f) const {
 }
 
 template <typename T, int N, PoolPolicy POLICY>
-std::pair<typename BoundedPool<T, N, POLICY>::Loan, bool>
+marl::pair<typename BoundedPool<T, N, POLICY>::Loan, bool>
 BoundedPool<T, N, POLICY>::tryBorrow() const {
   Item* item = nullptr;
   {
     marl::lock lock(storage->mutex);
     if (storage->free == nullptr) {
-      return std::make_pair(Loan(), false);
+      return marl::make_pair(Loan(), false);
     }
     item = storage->free;
     storage->free = storage->free->next;
@@ -314,7 +309,7 @@ BoundedPool<T, N, POLICY>::tryBorrow() const {
   if (POLICY == PoolPolicy::Reconstruct) {
     item->construct();
   }
-  return std::make_pair(Loan(item, storage), true);
+  return marl::make_pair(Loan(item, storage), true);
 }
 
 template <typename T, int N, PoolPolicy POLICY>
@@ -366,11 +361,6 @@ class UnboundedPool : public Pool<T> {
     MARL_NO_EXPORT inline Storage(Allocator* allocator);
     MARL_NO_EXPORT inline ~Storage();
     MARL_NO_EXPORT inline void return_(Item*) override;
-    // We cannot copy this as the Item pointers would be shared and
-    // deleted at a wrong point. We could move this but would have to take
-    // extra care no Item pointers are left in the moved-out object.
-    MARL_NO_EXPORT inline Storage(const Storage&) = delete;
-    MARL_NO_EXPORT inline Storage& operator=(const Storage&) = delete;
 
     Allocator* allocator;
     marl::mutex mutex;
@@ -379,7 +369,7 @@ class UnboundedPool : public Pool<T> {
   };
 
   Allocator* allocator;
-  eastl::shared_ptr<Storage> storage;
+  marl::shared_ptr<Storage> storage;
 };
 
 template <typename T, PoolPolicy POLICY>

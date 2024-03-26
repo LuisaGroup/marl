@@ -48,11 +48,11 @@ struct DAGRunContext<void> {
 };
 template <typename T>
 struct DAGWork {
-  using type = eastl::function<void(T)>;
+  using type = marl::function<void(T)>;
 };
 template <>
 struct DAGWork<void> {
-  using type = eastl::function<void()>;
+  using type = marl::function<void()>;
 };
 }  // namespace detail
 
@@ -94,7 +94,6 @@ class DAGBase {
   struct Node {
     MARL_NO_EXPORT inline Node() = default;
     MARL_NO_EXPORT inline Node(Work&& work);
-    MARL_NO_EXPORT inline Node(const Work& work);
 
     // The work to perform for this node in the graph.
     Work work;
@@ -137,9 +136,6 @@ class DAGBase {
 
 template <typename T>
 DAGBase<T>::Node::Node(Work&& work) : work(std::move(work)) {}
-
-template <typename T>
-DAGBase<T>::Node::Node(const Work& work) : work(work) {}
 
 template <typename T>
 void DAGBase<T>::initCounters(RunContext* ctx, Allocator* allocator) {
@@ -237,7 +233,7 @@ DAGNodeBuilder<T>::DAGNodeBuilder(DAGBuilder<T>* builder, NodeIndex index)
 template <typename T>
 template <typename F>
 DAGNodeBuilder<T> DAGNodeBuilder<T>::then(F&& work) {
-  auto node = builder->node(std::forward<F>(work));
+  auto node = builder->node(std::move(work));
   builder->addDependency(*this, node);
   return node;
 }
@@ -327,7 +323,7 @@ DAGNodeBuilder<T> DAGBuilder<T>::node(
               "NodeBuilder vectors out of sync");
   auto index = dag->nodes.size();
   numIns.emplace_back(0);
-  dag->nodes.emplace_back(Node{std::forward<F>(work)});
+  dag->nodes.emplace_back(Node{std::move(work)});
   auto node = DAGNodeBuilder<T>{this, index};
   for (auto in : after) {
     addDependency(in, node);

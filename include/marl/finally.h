@@ -25,11 +25,12 @@
 #define marl_finally_h
 
 #include "export.h"
-
-#include <EASTL/functional.h>
 #include <memory>
-#include <utility>
+#include <EASTL/functional.h>
+#include <EASTL/unique_ptr.h>
 #include <EASTL/shared_ptr.h>
+namespace marl { using eastl::make_shared; using eastl::shared_ptr; }
+namespace marl { using eastl::function; }
 
 namespace marl {
 
@@ -60,10 +61,10 @@ class FinallyImpl : public Finally {
 };
 
 template <typename F>
-FinallyImpl<F>::FinallyImpl(const F& func_) : func(func_) {}
+FinallyImpl<F>::FinallyImpl(const F& func) : func(func) {}
 
 template <typename F>
-FinallyImpl<F>::FinallyImpl(F&& func_) : func(std::move(func_)) {}
+FinallyImpl<F>::FinallyImpl(F&& func) : func(std::move(func)) {}
 
 template <typename F>
 FinallyImpl<F>::FinallyImpl(FinallyImpl<F>&& other)
@@ -84,8 +85,8 @@ inline FinallyImpl<F> make_finally(F&& f) {
 }
 
 template <typename F>
-inline eastl::shared_ptr<Finally> make_shared_finally(F&& f) {
-  return eastl::make_shared<FinallyImpl<F>>(std::forward<F>(f));
+inline marl::shared_ptr<Finally> make_shared_finally(F&& f) {
+  return marl::make_shared<FinallyImpl<F>>(std::forward<F>(f));
 }
 
 }  // namespace marl

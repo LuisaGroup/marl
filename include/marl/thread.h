@@ -15,17 +15,18 @@
 #ifndef marl_thread_h
 #define marl_thread_h
 
-#include "containers.h"
+#include "marl/containers.h"
 #include "export.h"
 
-#include <EASTL/functional.h>
+
+namespace marl { using eastl::function; }
 
 namespace marl {
 
 // Thread provides an OS abstraction for threads of execution.
 class Thread {
  public:
-  using Func = eastl::function<void()>;
+  using Func = marl::function<void()>;
 
   // Core identifies a logical processor unit.
   // How a core is identified varies by platform.
@@ -43,8 +44,8 @@ class Thread {
     };
 
     // Comparison functions
-    MARL_NO_EXPORT inline bool operator==(Core) const;
-    MARL_NO_EXPORT inline bool operator<(Core) const;
+    MARL_NO_EXPORT inline bool operator==(const Core&) const;
+    MARL_NO_EXPORT inline bool operator<(const Core&) const;
   };
 
   // Affinity holds the affinity mask for a thread - a description of what cores
@@ -52,8 +53,7 @@ class Thread {
   struct Affinity {
     // supported is true if marl supports controlling thread affinity for this
     // platform.
-#if defined(_WIN32) ||                                                       \
-    (defined(__linux__) && !defined(__ANDROID__) && !defined(__BIONIC__)) || \
+#if defined(_WIN32) || (defined(__linux__) && !defined(__ANDROID__)) || \
     defined(__FreeBSD__)
     static constexpr bool supported = true;
 #else
@@ -72,7 +72,7 @@ class Thread {
       // Windows requires that each thread is only associated with a
       // single affinity group, so the Policy's returned affinity will contain
       // cores all from the same group.
-      MARL_EXPORT static eastl::shared_ptr<Policy> anyOf(
+      MARL_EXPORT static marl::shared_ptr<Policy> anyOf(
           Affinity&& affinity,
           Allocator* allocator = Allocator::Default);
 
@@ -80,7 +80,7 @@ class Thread {
       // core from affinity. The single enabled core in the Policy's returned
       // affinity is:
       //      affinity[threadId % affinity.count()]
-      MARL_EXPORT static eastl::shared_ptr<Policy> oneOf(
+      MARL_EXPORT static marl::shared_ptr<Policy> oneOf(
           Affinity&& affinity,
           Allocator* allocator = Allocator::Default);
 
@@ -93,8 +93,6 @@ class Thread {
 
     MARL_EXPORT Affinity(Affinity&&);
 
-    MARL_EXPORT Affinity& operator=(Affinity&&);
-
     MARL_EXPORT Affinity(const Affinity&, Allocator* allocator);
 
     // all() returns an Affinity with all the cores available to the process.
@@ -102,7 +100,7 @@ class Thread {
 
     MARL_EXPORT Affinity(std::initializer_list<Core>, Allocator* allocator);
 
-    MARL_EXPORT Affinity(const containers::vector<Core, 32>&,
+    MARL_EXPORT Affinity(const marl::containers::vector<Core, 32>&,
                          Allocator* allocator);
 
     // count() returns the number of enabled cores in the affinity.
@@ -159,11 +157,11 @@ class Thread {
 // Thread::Core
 ////////////////////////////////////////////////////////////////////////////////
 // Comparison functions
-bool Thread::Core::operator==(Core other) const {
+bool Thread::Core::operator==(const Core& other) const {
   return pthread.index == other.pthread.index;
 }
 
-bool Thread::Core::operator<(Core other) const {
+bool Thread::Core::operator<(const Core& other) const {
   return pthread.index < other.pthread.index;
 }
 

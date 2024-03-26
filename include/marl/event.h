@@ -43,6 +43,16 @@ class Event {
   MARL_NO_EXPORT inline Event(Mode mode = Mode::Auto,
                               bool initialState = false,
                               Allocator* allocator = Allocator::Default);
+  
+  MARL_NO_EXPORT inline Event(std::nullptr_t) {}
+
+  MARL_NO_EXPORT inline Event(const Event&) = default;
+  MARL_NO_EXPORT inline Event(Event&&) = default;
+  MARL_NO_EXPORT inline Event& operator=(const Event& other) { shared = other.shared; return *this; }
+  MARL_NO_EXPORT inline explicit operator bool() const { return (bool)shared; }
+  MARL_NO_EXPORT inline bool operator==(const Event& other) const { return shared == other.shared; }
+  MARL_NO_EXPORT inline size_t hash() const { return std::hash<void*>{}(shared.get()); }
+
 
   // signal() signals the event, possibly unblocking a call to wait().
   MARL_NO_EXPORT inline void signal() const;
@@ -103,6 +113,7 @@ class Event {
                                          const Iterator& end);
 
  private:
+  friend class WeakEvent;
   struct Shared {
     MARL_NO_EXPORT inline Shared(Allocator* allocator,
                                  Mode mode,
@@ -120,16 +131,33 @@ class Event {
 
     marl::mutex mutex;
     ConditionVariable cv;
-    containers::vector<eastl::shared_ptr<Shared>, 1> deps;
+    containers::vector<marl::shared_ptr<Shared>, 1> deps;
     const Mode mode;
     bool signalled;
   };
-
-  const eastl::shared_ptr<Shared> shared;
+  MARL_NO_EXPORT inline Event(marl::shared_ptr<Shared> shared)
+   : shared(shared) {}
+  marl::shared_ptr<Shared> shared;
 };
 
-Event::Shared::Shared(Allocator* allocator, Mode mode_, bool initialState)
-    : cv(allocator), mode(mode_), signalled(initialState) {}
+class WeakEvent
+{
+  public:
+    MARL_NO_EXPORT inline WeakEvent() = default;
+    MARL_NO_EXPORT inline WeakEvent(const Event& event) { shared = event.shared; }
+    MARL_NO_EXPORT inline WeakEvent(const WeakEvent& other) { shared = other.shared; }
+    MARL_NO_EXPORT inline WeakEvent(WeakEvent&& other) { shared = std::move(other.shared); }
+    MARL_NO_EXPORT inline WeakEvent& operator=(const WeakEvent& other) { shared = other.shared; return *this; }
+    MARL_NO_EXPORT inline WeakEvent& operator=(WeakEvent&& other) { shared = std::move(other.shared); return *this; }
+    MARL_NO_EXPORT inline bool expired() const { return shared.expired(); }
+    MARL_NO_EXPORT inline bool operator==(const WeakEvent& other) const { return shared.lock() == other.shared.lock(); }
+    Event lock() const { return Event(shared.lock()); }
+  private:
+  marl::weak_ptr<Event::Shared> shared;
+};
+
+Event::Shared::Shared(Allocator* allocator, Mode mode, bool initialState)
+    : cv(allocator), mode(mode), signalled(initialState) {}
 
 void Event::Shared::signal() {
   marl::lock lock(mutex);

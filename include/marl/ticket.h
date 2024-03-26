@@ -62,7 +62,7 @@ class Ticket {
   struct Record;
 
  public:
-  using OnCall = eastl::function<void()>;
+  using OnCall = marl::function<void()>;
 
   // Queue hands out Tickets.
   class Queue {
@@ -77,7 +77,7 @@ class Ticket {
     MARL_NO_EXPORT inline void take(size_t count, const F& f);
 
    private:
-    eastl::shared_ptr<Shared> shared = eastl::make_shared<Shared>();
+    marl::shared_ptr<Shared> shared = marl::make_shared<Shared>();
     UnboundedPool<Record> pool;
   };
 
@@ -110,7 +110,7 @@ class Ticket {
 
     ConditionVariable isCalledCondVar;
 
-    eastl::shared_ptr<Shared> shared;
+    marl::shared_ptr<Shared> shared;
     Record* next = nullptr;  // guarded by shared->mutex
     Record* prev = nullptr;  // guarded by shared->mutex
     OnCall onCall;           // guarded by shared->mutex

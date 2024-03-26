@@ -17,14 +17,15 @@
 
 #include "export.h"
 
-#include <EASTL/functional.h>
+
+namespace marl { using eastl::function; }
 
 namespace marl {
 
 // Task is a unit of work for the scheduler.
 class Task {
  public:
-  using Function = eastl::function<void()>;
+  using Function = marl::function<void()>;
 
   enum class Flags {
     None = 0,
@@ -61,13 +62,13 @@ class Task {
   Flags flags = Flags::None;
 };
 
-Task::Task() = default;
+Task::Task() {}
 Task::Task(const Task& o) : function(o.function), flags(o.flags) {}
 Task::Task(Task&& o) : function(std::move(o.function)), flags(o.flags) {}
-Task::Task(const Function& function_, Flags flags_ /* = Flags::None */)
-    : function(function_), flags(flags_) {}
-Task::Task(Function&& function_, Flags flags_ /* = Flags::None */)
-    : function(std::move(function_)), flags(flags_) {}
+Task::Task(const Function& function, Flags flags /* = Flags::None */)
+    : function(function), flags(flags) {}
+Task::Task(Function&& function, Flags flags /* = Flags::None */)
+    : function(std::move(function)), flags(flags) {}
 Task& Task::operator=(const Task& o) {
   function = o.function;
   flags = o.flags;

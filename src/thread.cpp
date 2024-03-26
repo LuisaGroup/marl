@@ -19,17 +19,19 @@
 #include "marl/trace.h"
 
 #include <algorithm>  // std::sort
+#include <vector>
+#include <array>
+namespace marl { using std::sort; using std::vector; }
 
 #include <cstdarg>
 #include <cstdio>
 
 #if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN 1
+#endif
 #include <windows.h>
-#include <array>
 #include <cstdlib>  // mbstowcs
-#include <limits>   // std::numeric_limits
-#include <vector>
 #undef max
 #elif defined(__APPLE__)
 #include <mach/thread_act.h>
@@ -50,7 +52,7 @@
 namespace {
 
 struct CoreHasher {
-  inline uint64_t operator()(marl::Thread::Core core) const {
+  inline uint64_t operator()(const marl::Thread::Core& core) const {
     return core.pthread.index;
   }
 };
@@ -61,9 +63,9 @@ namespace marl {
 
 #if defined(_WIN32)
 static constexpr size_t MaxCoreCount =
-    std::numeric_limits<decltype(Thread::Core::windows.index)>::max() + 1ULL;
+    marl::numeric_limits<decltype(Thread::Core::windows.index)>::max() + 1ULL;
 static constexpr size_t MaxGroupCount =
-    std::numeric_limits<decltype(Thread::Core::windows.group)>::max() + 1ULL;
+    marl::numeric_limits<decltype(Thread::Core::windows.group)>::max() + 1ULL;
 static_assert(sizeof(KAFFINITY) * 8ULL <= MaxCoreCount,
               "Thread::Core::windows.index is too small");
 
@@ -82,7 +84,7 @@ struct ProcessorGroup {
 };
 
 struct ProcessorGroups {
-  std::array<ProcessorGroup, MaxGroupCount> groups;
+  marl::array<ProcessorGroup, MaxGroupCount> groups;
   size_t count;
 };
 
@@ -117,10 +119,6 @@ const ProcessorGroups& getProcessorGroups() {
 
 Thread::Affinity::Affinity(Allocator* allocator) : cores(allocator) {}
 Thread::Affinity::Affinity(Affinity&& other) : cores(std::move(other.cores)) {}
-Thread::Affinity& Thread::Affinity::operator=(Affinity&& other) {
-  cores = std::move(other.cores);
-  return *this;
-}
 Thread::Affinity::Affinity(const Affinity& other, Allocator* allocator)
     : cores(other.cores, allocator) {}
 
@@ -154,7 +152,7 @@ Thread::Affinity Thread::Affinity::all(
       }
     }
   }
-#elif defined(__linux__) && !defined(__ANDROID__) && !defined(__BIONIC__)
+#elif defined(__linux__) && !defined(__ANDROID__)
   auto thread = pthread_self();
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
@@ -187,7 +185,7 @@ Thread::Affinity Thread::Affinity::all(
   return affinity;
 }
 
-eastl::shared_ptr<Thread::Affinity::Policy> Thread::Affinity::Policy::anyOf(
+marl::shared_ptr<Thread::Affinity::Policy> Thread::Affinity::Policy::anyOf(
     Affinity&& affinity,
     Allocator* allocator /* = Allocator::Default */) {
   struct Policy : public Thread::Affinity::Policy {
@@ -218,7 +216,7 @@ eastl::shared_ptr<Thread::Affinity::Policy> Thread::Affinity::Policy::anyOf(
   return allocator->make_shared<Policy>(std::move(affinity));
 }
 
-eastl::shared_ptr<Thread::Affinity::Policy> Thread::Affinity::Policy::oneOf(
+marl::shared_ptr<Thread::Affinity::Policy> Thread::Affinity::Policy::oneOf(
     Affinity&& affinity,
     Allocator* allocator /* = Allocator::Default */) {
   struct Policy : public Thread::Affinity::Policy {
@@ -255,7 +253,7 @@ Thread::Affinity& Thread::Affinity::add(const Thread::Affinity& other) {
       cores.push_back(core);
     }
   }
-  std::sort(cores.begin(), cores.end());
+  marl::sort(cores.begin(), cores.end());
   return *this;
 }
 
@@ -270,7 +268,7 @@ Thread::Affinity& Thread::Affinity::remove(const Thread::Affinity& other) {
       cores.resize(cores.size() - 1);
     }
   }
-  std::sort(cores.begin(), cores.end());
+  marl::sort(cores.begin(), cores.end());
   return *this;
 }
 
@@ -278,33 +276,14 @@ Thread::Affinity& Thread::Affinity::remove(const Thread::Affinity& other) {
 
 class Thread::Impl {
  public:
-  Impl(Func&& func, _PROC_THREAD_ATTRIBUTE_LIST* attributes)
-      : func(std::move(func)),
-        handle(CreateRemoteThreadEx(GetCurrentProcess(),
-                                    nullptr,
-                                    0,
-                                    &Impl::run,
-                                    this,
-                                    0,
-                                    attributes,
-                                    nullptr)) {}
-  ~Impl() { CloseHandle(handle); }
-
-  Impl(const Impl&) = delete;
-  Impl(Impl&&) = delete;
-  Impl& operator=(const Impl&) = delete;
-  Impl& operator=(Impl&&) = delete;
-
-  void Join() const { WaitForSingleObject(handle, INFINITE); }
-
+  Impl(Func&& func) : func(std::move(func)) {}
   static DWORD WINAPI run(void* self) {
     reinterpret_cast<Impl*>(self)->func();
     return 0;
   }
 
- private:
-  const Func func;
-  const HANDLE handle;
+  Func func;
+  HANDLE handle;
 };
 
 Thread::Thread(Affinity&& affinity, Func&& func) {
@@ -313,7 +292,7 @@ Thread::Thread(Affinity&& affinity, Func&& func) {
   MARL_ASSERT(size > 0,
               "InitializeProcThreadAttributeList() did not give a size");
 
-  std::vector<uint8_t> buffer(size);
+  marl::vector<uint8_t> buffer(size);
   LPPROC_THREAD_ATTRIBUTE_LIST attributes =
       reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(buffer.data());
   CHECK_WIN32(InitializeProcThreadAttributeList(attributes, 1, 0, &size));
@@ -335,22 +314,27 @@ Thread::Thread(Affinity&& affinity, Func&& func) {
         sizeof(groupAffinity), nullptr, nullptr));
   }
 
-  impl = new Impl(std::move(func), attributes);
+  impl = new Impl(std::move(func));
+  impl->handle = CreateRemoteThreadEx(GetCurrentProcess(), nullptr, 0,
+                                      &Impl::run, impl, 0, attributes, nullptr);
 }
 
 Thread::~Thread() {
-  delete impl;
+  if (impl) {
+    CloseHandle(impl->handle);
+    delete impl;
+  }
 }
 
 void Thread::join() {
   MARL_ASSERT(impl != nullptr, "join() called on unjoinable thread");
-  impl->Join();
+  WaitForSingleObject(impl->handle, INFINITE);
 }
 
 void Thread::setName(const char* fmt, ...) {
   static auto setThreadDescription =
       reinterpret_cast<HRESULT(WINAPI*)(HANDLE, PCWSTR)>(GetProcAddress(
-          GetModuleHandleA("kernelbase.dll"), "SetThreadDescription"));
+          GetModuleHandle(TEXT("kernelbase.dll")), "SetThreadDescription"));
   if (setThreadDescription == nullptr) {
     return;
   }
@@ -397,7 +381,7 @@ class Thread::Impl {
       return;
     }
 
-#if defined(__linux__) && !defined(__ANDROID__) && !defined(__BIONIC__)
+#if defined(__linux__) && !defined(__ANDROID__)
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     for (size_t i = 0; i < count; i++) {
@@ -444,7 +428,7 @@ void Thread::setName(const char* fmt, ...) {
   pthread_setname_np(name);
 #elif defined(__FreeBSD__)
   pthread_set_name_np(pthread_self(), name);
-#elif !defined(__Fuchsia__) && !defined(__EMSCRIPTEN__)
+#elif !defined(__Fuchsia__)
   pthread_setname_np(pthread_self(), name);
 #endif
 
