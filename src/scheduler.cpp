@@ -390,11 +390,11 @@ void Scheduler::Worker::start() {
       auto allocator = scheduler->cfg.allocator;
       auto& affinityPolicy = scheduler->cfg.workerThread.affinityPolicy;
       auto affinity = affinityPolicy->get(id, allocator);
-      thread = Thread(std::move(affinity), [=] {
-        Thread::setName("Thread<%.2d>", int(id));
+      thread = Thread(std::move(affinity), [=, this] {
+        Thread::setName("Thread<%.2d>", static_cast<int>(id));
 
         if (auto const& initFunc = scheduler->cfg.workerThread.initializer) {
-          initFunc(id);
+          initFunc(static_cast<int>(id));
         }
 
         Scheduler::setBound(scheduler);
