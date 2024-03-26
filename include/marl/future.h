@@ -28,39 +28,39 @@ namespace marl {
 // Future is a synchronization primitive used to block until a signal is raised.
 template <typename T>
 class Future {
-public:
-  MARL_NO_EXPORT inline Future(Allocator* allocator = Allocator::Default);
+ public:
+  Future(Allocator* allocator = Allocator::Default);
   template <typename... Args>
     requires(std::is_constructible_v<T, Args && ...>)
-  MARL_NO_EXPORT inline void signal(Args&&...) const;
+  void signal(Args&&...) const;
 
   // clear() clears the signaled state.
-  MARL_NO_EXPORT inline void clear() const;
+  void clear() const;
 
   // wait() blocks until the event is signaled.
   // If the event was constructed with the Auto Mode, then only one
   // call to wait() will unblock before returning, upon which the signalled
   // state will be automatically cleared.
-  [[nodiscard]] MARL_NO_EXPORT inline T& wait() const;
+  [[nodiscard]] T& wait() const;
 
   // test() returns true if the event is signaled, otherwise false.
   // If the event is signalled and was constructed with the Auto Mode
   // then the signalled state will be automatically cleared upon returning.
-  [[nodiscard]] MARL_NO_EXPORT inline bool test() const;
+  [[nodiscard]] bool test() const;
 
   // isSignalled() returns true if the event is signaled, otherwise false.
   // Unlike test() the signal is not automatically cleared when the event was
   // constructed with the Auto Mode.
   // Note: No lock is held after bool() returns, so the event state may
   // immediately change after returning. Use with caution.
-  [[nodiscard]] MARL_NO_EXPORT inline bool isSignalled() const;
+  [[nodiscard]] bool isSignalled() const;
 
  private:
   struct Shared {
-    [[nodiscard]] MARL_NO_EXPORT inline Shared(Allocator* allocator);
+    [[nodiscard]] Shared(Allocator* allocator);
     template <typename... Args>
-    MARL_NO_EXPORT inline void signal(Args&&... args);
-    MARL_NO_EXPORT inline T& wait();
+    void signal(Args&&... args);
+    T& wait();
 
     marl::mutex mutex;
     ConditionVariable cv;
@@ -91,7 +91,7 @@ inline void Future<T>::signal(Args&&... args) const {
 }
 
 template <typename T>
-template <typename ... Args>
+template <typename... Args>
 inline void Future<T>::Shared::signal(Args&&... args) {
   marl::lock lock(mutex);
   result.reset();
