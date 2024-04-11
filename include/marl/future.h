@@ -31,7 +31,7 @@ class Future {
  public:
   Future(Allocator* allocator = Allocator::Default);
   template <typename... Args>
-    requires(std::is_constructible_v<T, Args && ...>)
+    requires(eastl::is_constructible_v<T, Args && ...>)
   void signal(Args&&...) const;
 
   // clear() clears the signaled state.
@@ -85,7 +85,7 @@ inline Future<T>::Future(Allocator* allocator /* = Allocator::Default */)
 
 template <typename T>
 template <typename... Args>
-  requires(std::is_constructible_v<T, Args && ...>)
+  requires(eastl::is_constructible_v<T, Args && ...>)
 inline void Future<T>::signal(Args&&... args) const {
   shared->signal(std::forward<Args>(args)...);
 }
