@@ -113,7 +113,7 @@ inline T& Future<T>::wait() const {
 template <typename T>
 inline bool Future<T>::test() const {
   marl::lock lock(shared->mutex);
-  if (!shared->dtor) {
+  if (!shared->result) {
     return false;
   }
   return true;
@@ -122,7 +122,7 @@ inline bool Future<T>::test() const {
 template <typename T>
 inline bool Future<T>::isSignalled() const {
   marl::lock lock(shared->mutex);
-  return shared->dtor;
+  return shared->result.has_value();
 }
 
 }  // namespace marl
