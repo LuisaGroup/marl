@@ -219,7 +219,11 @@ void Allocator::free(const marl::Allocation& allocation) {
                       allocation.request.size, true, true);
   } else {
 #ifdef MARL_USE_SYSTEM_STL
+#ifdef _WIN32
+      _aligned_free(allocation.ptr);
+#else
       ::free(allocation.ptr);
+#endif
 #else
     eastl::GetDefaultAllocator()->deallocate(allocation.ptr, allocation.request.size);
 #endif
