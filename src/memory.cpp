@@ -192,7 +192,11 @@ marl::Allocation Allocator::allocate(const marl::Allocation::Request& request) {
     ptr = detail::pagedMalloc(request.alignment, request.size, true, true);
   } else {
 #ifdef MARL_USE_SYSTEM_STL
+#ifdef _WIN32
+    ptr = _aligned_malloc(request.size, request.alignment);
+#else
     ptr = ::aligned_alloc(request.alignment, request.size);
+#endif
 #else
     ptr = eastl::GetDefaultAllocator()->allocate(request.size,
                                                  request.alignment, 0u);
