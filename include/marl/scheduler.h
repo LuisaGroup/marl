@@ -293,8 +293,12 @@ class Scheduler {
       return std::hash<uintptr_t>{}(reinterpret_cast<uintptr_t>(ptr));
     }
     size_t operator()(const std::thread::id& id) const noexcept {
-      static_assert(sizeof(id) == sizeof(uintptr_t), "std::thread::id size unexpected");
-      return std::hash<uintptr_t>{}(reinterpret_cast<const uintptr_t&>(id));
+        static_assert(sizeof(id) == sizeof(uintptr_t) || sizeof(id) == sizeof(uint32_t), "std::thread::id size unexpected");
+        if constexpr (sizeof(id) == sizeof(uintptr_t)) {
+          return std::hash<uintptr_t>{}(reinterpret_cast<const uintptr_t&>(id));
+        } else {
+          return std::hash<uint32_t>{}(reinterpret_cast<const uint32_t&>(id));
+        }
     }
   };
 
