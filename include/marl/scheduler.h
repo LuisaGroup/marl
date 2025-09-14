@@ -286,6 +286,17 @@ class Scheduler {
   // Maximum number of worker threads.
   static constexpr size_t MaxWorkerThreads = 256;
 
+  struct PointerHash {
+    auto operator()(const void* ptr) const noexcept {
+      static_assert(sizeof(ptr) == sizeof(uintptr_t), "pointer size unexpected");
+      return std::hash<uintptr_t>{}(reinterpret_cast<uintptr_t>(ptr));
+    }
+    auto operator()(const std::thread::id& id) const noexcept {
+      static_assert(sizeof(id) == sizeof(uintptr_t), "std::thread::id size unexpected");
+      return std::hash<uintptr_t>{}(reinterpret_cast<const uintptr_t&>(id));
+    }
+  };
+
   // WaitingFibers holds all the fibers waiting on a timeout.
   struct WaitingFibers {
     inline WaitingFibers(Allocator*);
@@ -317,14 +328,14 @@ class Scheduler {
       inline bool operator<(const Timeout&) const;
     };
     containers::set<Timeout, std::less<Timeout>> timeouts;
-    containers::unordered_map<Fiber*, TimePoint> fibers;
+    containers::unordered_map<Fiber*, TimePoint, PointerHash> fibers;
   };
 
   // TODO: Implement a queue that recycles elements to reduce number of
   // heap allocations.
   using TaskQueue = containers::deque<Task>;
   using FiberQueue = containers::deque<Fiber*>;
-  using FiberSet = containers::unordered_set<Fiber*>;
+  using FiberSet = containers::unordered_set<Fiber*, PointerHash>;
 
   // Workers execute Tasks on a single thread.
   // Once a task is started, it may yield to other tasks on the same Worker.
@@ -512,7 +523,8 @@ class Scheduler {
 
     using WorkerByTid =
         containers::unordered_map<std::thread::id,
-                                  Allocator::unique_ptr<Worker>>;
+                                  Allocator::unique_ptr<Worker>,
+                                  PointerHash>;
     marl::mutex mutex;
     MARL_GUARDED_BY(mutex) std::condition_variable unbind;
     MARL_GUARDED_BY(mutex) WorkerByTid byTid;
