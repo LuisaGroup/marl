@@ -287,11 +287,12 @@ class Scheduler {
   static constexpr size_t MaxWorkerThreads = 256;
 
   struct PointerHash {
-    auto operator()(const void* ptr) const noexcept {
+    using is_transparent = void;
+    size_t operator()(const void* ptr) const noexcept {
       static_assert(sizeof(ptr) == sizeof(uintptr_t), "pointer size unexpected");
       return std::hash<uintptr_t>{}(reinterpret_cast<uintptr_t>(ptr));
     }
-    auto operator()(const std::thread::id& id) const noexcept {
+    size_t operator()(const std::thread::id& id) const noexcept {
       static_assert(sizeof(id) == sizeof(uintptr_t), "std::thread::id size unexpected");
       return std::hash<uintptr_t>{}(reinterpret_cast<const uintptr_t&>(id));
     }
