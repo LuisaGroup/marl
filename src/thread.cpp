@@ -19,9 +19,8 @@
 #include "marl/trace.h"
 
 #include <algorithm>  // std::sort
-#include <vector>
 #include <array>
-namespace marl { using std::sort; using std::vector; }
+namespace marl { using std::sort; }
 
 #include <cstdarg>
 #include <cstdio>
@@ -292,9 +291,9 @@ Thread::Thread(Affinity&& affinity, Func&& func) {
   MARL_ASSERT(size > 0,
               "InitializeProcThreadAttributeList() did not give a size");
 
-  marl::vector<uint8_t> buffer(size);
+  auto buffer = Allocator::Default->make_unique_n<uint8_t>(size);
   LPPROC_THREAD_ATTRIBUTE_LIST attributes =
-      reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(buffer.data());
+      reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(buffer.get());
   CHECK_WIN32(InitializeProcThreadAttributeList(attributes, 1, 0, &size));
   defer(DeleteProcThreadAttributeList(attributes));
 
